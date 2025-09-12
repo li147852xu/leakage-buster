@@ -3,7 +3,7 @@ import os, json, datetime as dt
 from typing import Dict, Optional
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-def render_report(results: Dict, meta: Dict, out_dir: str, simulation_results: Optional[Dict] = None):
+def render_report(results: Dict, meta: Dict, out_dir: str, simulation_results: Optional[Dict] = None, policy_audit: Optional[Dict] = None):
     env = Environment(loader=FileSystemLoader(searchpath=os.path.join(os.path.dirname(__file__), "..", "templates")),
                       autoescape=select_autoescape())
     tpl = env.get_template("report.html.j2")
@@ -11,6 +11,7 @@ def render_report(results: Dict, meta: Dict, out_dir: str, simulation_results: O
         results=results, 
         meta=meta, 
         simulation=simulation_results,
+        policy_audit=policy_audit,
         now=dt.datetime.now().isoformat(timespec="seconds")
     )
     os.makedirs(out_dir, exist_ok=True)

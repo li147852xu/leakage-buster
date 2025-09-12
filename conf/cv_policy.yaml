@@ -1,0 +1,50 @@
+
+# CV策略配置文件
+# 用于定义线下评估与线上推理的口径一致性
+
+# CV类型：kfold, timeseries, group
+cv_type: timeseries
+
+# CV折数
+n_splits: 5
+
+# 时间列配置
+time_col: date
+
+# 分组列配置（用于GroupKFold）
+group_cols:
+  - user_id
+  - merchant_id
+
+# 采样策略：random, stratified, time_aware
+sampling_strategy: time_aware
+
+# 随机种子
+random_state: 42
+
+# 数据质量要求
+data_requirements:
+  min_rows: 100
+  max_missing_rate: 0.1
+  
+# 特征工程要求
+feature_requirements:
+  target_encoding: "cv_only"  # cv_only, full_dataset, none
+  rolling_stats: "historical_only"  # historical_only, full_dataset, none
+  aggregation: "cv_only"  # cv_only, full_dataset, none
+
+# 验证规则
+validation_rules:
+  - name: "time_column_required"
+    description: "时间列必须存在且有效"
+    severity: "high"
+  - name: "group_columns_available"
+    description: "分组列必须存在"
+    severity: "medium"
+  - name: "sufficient_data"
+    description: "数据量必须足够进行CV"
+    severity: "high"
+  - name: "no_future_leakage"
+    description: "特征不能使用未来信息"
+    severity: "high"
+
