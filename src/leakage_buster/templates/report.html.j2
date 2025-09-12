@@ -11,6 +11,7 @@
   .fix-high{background:#fdf2f2; border-color:#f5c6cb}
   .fix-medium{background:#fff3cd; border-color:#ffeaa7}
   .fix-low{background:#d1ecf1; border-color:#bee5eb}
+  .preview-section{background:#f0f8ff; border:2px dashed #4a90e2; border-radius:8px; padding:16px; margin:16px 0}
   ul{margin:8px 0; padding-left:20px}
 </style>
 <h1>Leakage Buster 报告</h1>
@@ -57,6 +58,8 @@
           - 考虑使用GroupKFold避免组间泄漏
         {% elif r["name"].startswith("Target leakage (categorical") %}
           - 检查类别特征是否由目标聚合产生
+        {% elif r["name"].startswith("Statistical leakage") %}
+          - 确认统计特征在CV内正确计算
         {% endif %}
       </li>
     {% endfor %}
@@ -84,6 +87,32 @@
   <p><strong>详细修复代码见：</strong> <code>fix_transforms.py</code></p>
 </div>
 {% endif %}
+
+<hr/>
+
+<!-- 统计类泄漏（预览）分区 -->
+<div class="preview-section">
+  <h2>📊 统计类泄漏（预览）</h2>
+  <p><em>此功能为预览版，用于检测疑似统计特征泄漏。具体实现将在后续版本中完善。</em></p>
+  
+  {% set stat_risks = results["risks"] | selectattr("name", "equalto", "Statistical leakage (preview)") | list %}
+  {% if stat_risks %}
+    <div class="risk sev-medium">
+      <h3>统计特征检测结果</h3>
+      {% for r in stat_risks %}
+        <p>{{ r["detail"] }}</p>
+        <pre>{{ r["evidence"] | tojson(indent=2) }}</pre>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p>✅ 未检测到明显的统计特征泄漏。</p>
+  {% endif %}
+  
+  <div style="margin-top: 12px; padding: 8px; background: #fff3cd; border-radius: 4px;">
+    <strong>注意：</strong>此预览功能主要检测变异系数较小的数值特征，这些特征可能是聚合统计结果。
+    建议在特征工程时确保所有统计特征都在交叉验证的折叠内正确计算。
+  </div>
+</div>
 
 <hr/>
 
