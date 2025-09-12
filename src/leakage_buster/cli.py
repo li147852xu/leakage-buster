@@ -1,140 +1,26 @@
 
 from __future__ import annotations
-import argparse, os, json, sys
+import argparse, os, json
 import pandas as pd
 from .core.checks import run_checks
 from .core.report import render_report, write_fix_script, write_meta
 
-def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_type: str | None = None):
-    """运行泄漏检测"""
-    try:
-        # 验证输入文件
-        if not os.path.exists(train_path):
-            return {
-                "status": "error",
-                "exit_code": 3,
-                "error": {
-                    "type": "FileNotFoundError",
-                    "message": f"Training file not found: {train_path}",
-                    "details": {"file": train_path}
-                }
-            }
-        
-        # 读取数据
-        try:
-            df = pd.read_csv(train_path)
-        except Exception as e:
-            return {
-                "status": "error",
-                "exit_code": 3,
-                "error": {
-                    "type": "FileNotFoundError",
-                    "message": f"Failed to read CSV file: {str(e)}",
-                    "details": {"file": train_path, "error": str(e)}
-                }
-            }
-        
-        # 验证目标列
-        if target not in df.columns:
-            return {
-                "status": "error",
-                "exit_code": 2,
-                "error": {
-                    "type": "ValidationError",
-                    "message": f"Target column '{target}' not found in data",
-                    "details": {"column": target, "available_columns": list(df.columns)}
-                }
-            }
-        
-        # 验证时间列
-        if time_col and time_col not in df.columns:
-            return {
-                "status": "error",
-                "exit_code": 2,
-                "error": {
-                    "type": "ValidationError",
-                    "message": f"Time column '{time_col}' not found in data",
-                    "details": {"column": time_col, "available_columns": list(df.columns)}
-                }
-            }
-        
-        # 运行检测
-        try:
-            results = run_checks(df, target=target, time_col=time_col, cv_type=cv_type)
-        except Exception as e:
-            return {
-                "status": "error",
-                "exit_code": 4,
-                "error": {
-                    "type": "RuntimeError",
-                    "message": f"Detection failed: {str(e)}",
-                    "details": {"error": str(e)}
-                }
-            }
-        
-        # 准备元数据
-        meta = {
-            "args": {"train": train_path, "target": target, "time_col": time_col, "out": out_dir, "cv_type": cv_type},
-            "n_rows": int(len(df)),
-            "n_cols": int(df.shape[1]),
-            "target": target,
-            "time_col": time_col,
-            "cv_type": cv_type,
-        }
-        
-        # 创建输出目录
-        try:
-            os.makedirs(out_dir, exist_ok=True)
-        except Exception as e:
-            return {
-                "status": "error",
-                "exit_code": 3,
-                "error": {
-                    "type": "FileNotFoundError",
-                    "message": f"Failed to create output directory: {str(e)}",
-                    "details": {"directory": out_dir, "error": str(e)}
-                }
-            }
-        
-        # 生成输出文件
-        try:
-            write_meta(meta, out_dir)
-            report_path = render_report(results, meta, out_dir)
-            fix_path = write_fix_script(results, out_dir)
-        except Exception as e:
-            return {
-                "status": "error",
-                "exit_code": 4,
-                "error": {
-                    "type": "RuntimeError",
-                    "message": f"Failed to generate output files: {str(e)}",
-                    "details": {"error": str(e)}
-                }
-            }
-        
-        # 返回成功结果
-        return {
-            "status": "success",
-            "exit_code": 0,
-            "data": {
-                "report": report_path,
-                "fix_script": fix_path,
-                "meta": meta,
-                "risks": results["risks"]
-            }
-        }
-        
-    except Exception as e:
-        # 捕获未预期的错误
-        return {
-            "status": "error",
-            "exit_code": 4,
-            "error": {
-                "type": "RuntimeError",
-                "message": f"Unexpected error: {str(e)}",
-                "details": {"error": str(e)}
-            }
-        }
+def run(train_path: str, target: str, time_col: str | None, out_dir: str):
+    """运行泄漏检测 - v0.1简化版本"""
+    df = pd.read_csv(train_path)
+    results = run_checks(df, target=target, time_col=time_col)
+    meta = {
+        "args": {"train": train_path, "target": target, "time_col": time_col, "out": out_dir},
+        "n_rows": int(len(df)),
+        "n_cols": int(df.shape[1]),
+        "target": target,
+        "time_col": time_col,
+    }
+    os.makedirs(out_dir, exist_ok=True)
+    write_meta(meta, out_dir)
+    report_path = render_report(results, meta, out_dir)
+    fix_path = write_fix_script(results, out_dir)
+    return {"report": report_path, "fix_script": fix_path}
 
 def build_parser():
     p = argparse.ArgumentParser(prog="leakage-buster", description="Time leakage & fold auditor")
@@ -143,26 +29,17 @@ def build_parser():
     run_p.add_argument("--train", type=str, required=True)
     run_p.add_argument("--target", type=str, required=True)
     run_p.add_argument("--time-col", type=str, default=None)
-    run_p.add_argument("--cv-type", type=str, choices=["kfold", "timeseries", "group"], default=None, 
-                       help="CV strategy: kfold/timeseries/group")
     run_p.add_argument("--out", type=str, required=True)
     return p
 
 def main():
     parser = build_parser()
     args = parser.parse_args()
-    
     if args.cmd == "run" or (args.cmd is None and hasattr(args, "train")):
-        result = run(args.train, args.target, args.time_col, args.out, args.cv_type)
-        
-        # 输出JSON结果
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        
-        # 设置退出码
-        sys.exit(result["exit_code"])
+        paths = run(args.train, args.target, args.time_col, args.out)
+        print(json.dumps(paths, ensure_ascii=False, indent=2))
     else:
         parser.print_help()
-        sys.exit(1)
 
 if __name__ == "__main__":
     main()
