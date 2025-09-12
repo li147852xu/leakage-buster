@@ -1,0 +1,107 @@
+
+<!doctype html><html lang="zh"><meta charset="utf-8"/>
+<title>Leakage Buster 报告</title>
+<style>
+  body{font-family:system-ui,Segoe UI,Arial,PingFang SC; margin:24px}
+  .risk{border:1px solid #ddd; border-radius:8px; padding:12px 16px; margin:12px 0}
+  .sev-high{border-left:6px solid #d9534f}.sev-medium{border-left:6px solid #f0ad4e}.sev-low{border-left:6px solid #5bc0de}
+  code,pre{background:#f8f8f8; padding:2px 4px; border-radius:4px}
+  .summary{background:#f9f9f9; border:1px solid #ddd; border-radius:8px; padding:16px; margin:16px 0}
+  .fix-card{background:#e8f5e8; border:1px solid #c3e6c3; border-radius:8px; padding:12px; margin:8px 0}
+  .fix-high{background:#fdf2f2; border-color:#f5c6cb}
+  .fix-medium{background:#fff3cd; border-color:#ffeaa7}
+  .fix-low{background:#d1ecf1; border-color:#bee5eb}
+  ul{margin:8px 0; padding-left:20px}
+</style>
+<h1>Leakage Buster 报告</h1>
+<div>命令参数：<code>{{ meta["args"] }}</code></div>
+<div>目标列：<code>{{ meta["target"] }}</code>；时间列：<code>{{ meta["time_col"] or "未指定" }}</code>；CV策略：<code>{{ meta["cv_type"] or "未指定" }}</code></div>
+<div>样本数：{{ meta["n_rows"] }}；特征数：{{ meta["n_cols"] }}</div>
+
+<!-- 修复建议摘要卡片区域 -->
+{% if results["risks"] %}
+<div class="summary">
+  <h2>🔧 修复建议摘要</h2>
+  {% set high_risks = results["risks"] | selectattr("severity", "equalto", "high") | list %}
+  {% set medium_risks = results["risks"] | selectattr("severity", "equalto", "medium") | list %}
+  {% set low_risks = results["risks"] | selectattr("severity", "equalto", "low") | list %}
+  
+  {% if high_risks %}
+  <div class="fix-card fix-high">
+    <h4>🚨 高危问题（{{ high_risks|length }}个）</h4>
+    <ul>
+    {% for r in high_risks %}
+      <li><strong>{{ r["name"] }}</strong>
+        {% if r["name"].startswith("Target leakage") %}
+          - 立即删除或在CV内重算相关列
+        {% elif r["name"].startswith("Target encoding") %}
+          - 检查是否使用了全量目标编码，改为CV内编码
+        {% elif r["name"].startswith("Time window") %}
+          - 确保统计特征仅使用窗口内数据
+        {% elif r["name"].startswith("CV strategy") %}
+          - 调整CV策略以匹配数据特征
+        {% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  
+  {% if medium_risks %}
+  <div class="fix-card fix-medium">
+    <h4>⚠️ 中危问题（{{ medium_risks|length }}个）</h4>
+    <ul>
+    {% for r in medium_risks %}
+      <li><strong>{{ r["name"] }}</strong>
+        {% if r["name"].startswith("KFold leakage") %}
+          - 考虑使用GroupKFold避免组间泄漏
+        {% elif r["name"].startswith("Target leakage (categorical") %}
+          - 检查类别特征是否由目标聚合产生
+        {% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  
+  {% if low_risks %}
+  <div class="fix-card fix-low">
+    <h4>💡 建议优化（{{ low_risks|length }}个）</h4>
+    <ul>
+    {% for r in low_risks %}
+      <li><strong>{{ r["name"] }}</strong>
+        {% if r["name"].startswith("Time-awareness") %}
+          - 使用时间感知的特征工程和验证策略
+        {% elif r["name"].startswith("CV strategy recommendation") %}
+          - 考虑采用推荐的CV策略
+        {% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  
+  <p><strong>详细修复代码见：</strong> <code>fix_transforms.py</code></p>
+</div>
+{% endif %}
+
+<hr/>
+
+<!-- 详细风险项 -->
+<h2>📋 详细检测结果</h2>
+{% if results["risks"] %}
+  {% for r in results["risks"] %}
+    <div class="risk sev-{{ 'high' if r['severity']=='high' else 'medium' if r['severity']=='medium' else 'low' }}">
+      <h3>{{ r["name"] }}（{{ r["severity"] }}）</h3>
+      <p>{{ r["detail"] }}</p>
+      <pre>{{ r["evidence"] | tojson(indent=2) }}</pre>
+    </div>
+  {% endfor %}
+{% else %}
+  <p>✅ 未发现明显风险项。</p>
+{% endif %}
+
+<hr/>
+<p><em>报告生成时间：{{ now }}</em></p>
+</html>
+
