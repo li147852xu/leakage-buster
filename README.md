@@ -1,5 +1,5 @@
 
-# Leakage Buster v0.2
+# Leakage Buster v0.3
 
 > 自动检测时间泄漏 / KFold 泄漏 / 口径不一致，并生成**修复脚本**与**审计报告**。
 
@@ -8,224 +8,176 @@
 
 ## ✨ 功能特性
 
-### 🔍 泄漏检测
-- **目标泄漏检测**: 识别与目标高度相关的特征
-- **目标编码泄漏**: 检测疑似目标编码特征
-- **时间窗口泄漏**: 识别全量统计vs窗口内统计问题
-- **分组泄漏检测**: 建议使用GroupKFold避免组间泄漏
-- **CV策略一致性**: 自动推荐合适的交叉验证策略
+### 🔍 核心检测能力
+- **目标泄漏检测**：高相关性（|corr|/R²≥0.98）、类别纯度异常
+- **统计类泄漏检测**：目标编码(TE)、WOE、滚动统计、聚合痕迹
+- **时间泄漏检测**：时间列解析、时间感知建议
+- **分组泄漏检测**：高重复列→GroupKFold建议
+- **CV策略一致性**：TimeSeriesSplit vs KFold vs GroupKFold推荐
 
-### 📊 统计类泄漏（预览）
-- 检测疑似统计特征（变异系数较小的数值特征）
-- 为未来完善统计类泄漏检测预留接口
+### ⏰ 时序模拟器 (v0.3新增)
+- **对比验证**：TimeSeriesSplit与KFold的OOF指标变化
+- **泄漏阈值**：可配置的泄漏检测阈值
+- **风险分级**：基于分数差异的严重程度评估
+- **量化证据**：结构化的检测证据和风险分
 
-### 🛠️ 输出功能
-- **HTML报告**: 可视化风险项和修复建议
-- **修复脚本**: 自动生成Python修复代码
-- **JSON输出**: 结构化数据，便于系统集成
+### 📊 专业报告
+- **HTML报告**：美观的可视化报告，支持证据展开
+- **修复脚本**：自动生成的Python修复代码
+- **风险矩阵**：按严重程度分类的风险统计
+- **证据详情**：可折叠的详细检测证据
 
 ## 🚀 快速开始
 
 ### 安装
-
 ```bash
 pip install -e .
 ```
 
-### 基础用法
-
+### 基本使用
 ```bash
-# 基础检测
-leakage-buster run --train data.csv --target y --out results/
+# 基本检测
+leakage-buster run --train examples/synth_train.csv --target y --time-col date --out runs/demo
 
-# 时间序列数据
-leakage-buster run \
-  --train data.csv \
-  --target y \
-  --time-col timestamp \
-  --cv-type timeseries \
-  --out results/
+# 带时序模拟的检测
+leakage-buster run --train examples/homecredit_te.csv --target y --time-col date --out runs/v03_te --simulate-cv time --leak-threshold 0.02
 
-# 分组数据
-leakage-buster run \
-  --train data.csv \
-  --target y \
-  --cv-type group \
-  --out results/
+# 滚动统计检测
+leakage-buster run --train examples/fraud_rolling.csv --target y --time-col ts --out runs/v03_roll --simulate-cv time
 ```
 
-## 📋 参数说明
+### 参数说明
+- `--train`: 训练数据CSV文件路径
+- `--target`: 目标列名
+- `--time-col`: 时间列名（可选）
+- `--out`: 输出目录
+- `--cv-type`: CV策略（kfold/timeseries/group）
+- `--simulate-cv`: 启用时序模拟（time）
+- `--leak-threshold`: 泄漏阈值（默认0.02）
 
-| 参数 | 必需 | 描述 | 示例 |
-|------|------|------|------|
-| `--train` | ✅ | 训练数据CSV文件路径 | `--train data/train.csv` |
-| `--target` | ✅ | 目标列名称 | `--target y` |
-| `--out` | ✅ | 输出目录路径 | `--out runs/audit_2024` |
-| `--time-col` | ❌ | 时间列名称 | `--time-col date` |
-| `--cv-type` | ❌ | CV策略类型 | `--cv-type timeseries` |
+## 📁 项目结构
 
-### CV策略类型
-
-- `kfold`: 标准K折交叉验证（无时间依赖的独立样本）
-- `timeseries`: 时间序列分割（有时间顺序的数据）
-- `group`: 分组交叉验证（有分组结构的数据）
-
-## 📁 输出文件
-
-执行成功后，在输出目录中生成：
-
-| 文件名 | 描述 |
-|--------|------|
-| `report.html` | 可视化审计报告 |
-| `fix_transforms.py` | 修复建议代码 |
-| `meta.json` | 元数据和参数信息 |
-
-## 🔧 检测器架构
-
-项目采用模块化检测器架构，便于扩展：
-
-```python
-from leakage_buster.core.checks import DetectorRegistry
-
-# 获取所有检测器
-registry = DetectorRegistry()
-for detector in registry.detectors:
-    risks = detector.detect(df, target, time_col)
+```
+leakage-buster/
+├── src/leakage_buster/
+│   ├── cli.py                 # 命令行接口
+│   ├── core/
+│   │   ├── checks.py         # 泄漏检测器
+│   │   ├── simulator.py      # 时序模拟器
+│   │   └── report.py         # 报告生成
+│   └── templates/
+│       └── report.html.j2    # HTML报告模板
+├── examples/                 # 示例数据
+│   ├── synth_train.csv      # 基础示例
+│   ├── homecredit_te.csv    # 目标编码示例
+│   └── fraud_rolling.csv    # 滚动统计示例
+├── tests/                   # 测试用例
+└── runs/                    # 输出目录
 ```
 
-### 内置检测器
+## 🔧 检测器详解
 
-- `TargetLeakageDetector`: 目标泄漏检测
-- `TargetEncodingLeakageDetector`: 目标编码泄漏检测
-- `KFoldGroupLeakageDetector`: 分组泄漏检测
-- `TimeColumnIssuesDetector`: 时间列问题检测
-- `CVConsistencyDetector`: CV策略一致性检测
-- `StatisticalLeakageDetector`: 统计类泄漏检测（预览）
+### 1. 目标泄漏检测器
+- **高相关性检测**：识别与目标高度相关的特征
+- **类别纯度检测**：发现几乎完美预测目标的类别
 
-## 📊 JSON Schema
+### 2. 统计类泄漏检测器 (v0.3)
+- **目标编码(TE)检测**：识别疑似目标编码特征
+- **WOE检测**：识别Weight of Evidence特征
+- **滚动统计检测**：识别可能跨越未来时点的滚动统计
+- **聚合痕迹检测**：识别疑似聚合统计特征
 
-### 成功输出格式
+### 3. 时序模拟器 (v0.3)
+- **CV对比**：TimeSeriesSplit vs KFold的AUC差异
+- **泄漏识别**：基于阈值判断是否存在泄漏
+- **风险分级**：High/Medium/Low风险等级
 
+## 📈 输出示例
+
+### JSON输出
 ```json
 {
   "status": "success",
   "exit_code": 0,
   "data": {
-    "report": "path/to/report.html",
-    "fix_script": "path/to/fix_transforms.py",
-    "meta": {...},
-    "risks": [...]
+    "report": "runs/demo/report.html",
+    "fix_script": "runs/demo/fix_transforms.py",
+    "risks": [
+      {
+        "name": "Target Encoding leakage risk",
+        "severity": "high",
+        "leak_score": 0.85,
+        "evidence": {
+          "suspicious_columns": {
+            "target_enc_feature": {
+              "correlation": 0.92,
+              "leak_score": 0.85
+            }
+          }
+        }
+      }
+    ],
+    "simulation": {
+      "summary": {
+        "total_features": 2,
+        "leak_features": 1,
+        "leak_rate": 0.5
+      }
+    }
   }
 }
 ```
 
-### 退出码定义
-
-| 退出码 | 含义 |
-|--------|------|
-| 0 | 成功 |
-| 2 | 参数错误 |
-| 3 | 文件错误 |
-| 4 | 运行时错误 |
-
-详细规范见 [JSON Schema 文档](docs/json_schema.md)
+### HTML报告特性
+- **修复建议摘要**：按严重程度分类的修复建议
+- **Statistical Leakage板块**：专门的统计类泄漏检测结果
+- **时序模拟结果**：CV对比表格和摘要统计
+- **风险分显示**：每个风险项的可量化风险分
+- **可折叠证据**：详细的检测证据和修复建议
 
 ## 🧪 测试
 
 ```bash
 # 运行所有测试
-pytest
+pytest -q
 
 # 运行特定测试
-pytest tests/test_schema.py -v
+pytest tests/test_te_woe_rolling.py -v
 
 # 运行示例
-leakage-buster run --train examples/synth_train.csv --target y --time-col date --out runs/demo
+leakage-buster run --train examples/synth_train.csv --target y --time-col date --out runs/test
 ```
 
-## 📚 文档
+## 📋 版本历史
 
-- [CLI参数规范](docs/cli_flags.md)
-- [JSON Schema规范](docs/json_schema.md)
-- [与tabular-agent集成指南](docs/json_schema.md#与-tabular-agent-集成)
-
-## 🔄 与 tabular-agent 集成
-
-```python
-import subprocess
-import json
-
-def audit_dataset(train_path, target_col, time_col=None, cv_type=None):
-    """执行数据泄漏审计"""
-    cmd = [
-        "leakage-buster", "run",
-        "--train", train_path,
-        "--target", target_col,
-        "--out", "runs/audit"
-    ]
-    
-    if time_col:
-        cmd.extend(["--time-col", time_col])
-    if cv_type:
-        cmd.extend(["--cv-type", cv_type])
-    
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    return json.loads(result.stdout)
-```
-
-## 🛠️ 开发
-
-### 添加新检测器
-
-```python
-from leakage_buster.core.checks import BaseDetector, RiskItem
-
-class MyCustomDetector(BaseDetector):
-    def __init__(self):
-        super().__init__("my_custom_detector")
-    
-    def detect(self, df, target, time_col=None, **kwargs):
-        risks = []
-        # 实现检测逻辑
-        return risks
-```
-
-### 运行开发测试
-
-```bash
-# 安装开发依赖
-pip install -e .
-
-# 运行测试
-pytest tests/ -v
-
-# 运行示例
-leakage-buster run --train examples/synth_train.csv --target y --time-col date --out runs/v02_demo
-```
-
-## 📈 版本历史
+### v0.3.0 (当前)
+- ✨ 新增统计类泄漏检测器（TE/WOE/滚动统计/聚合痕迹）
+- ✨ 新增时序模拟器对比验证功能
+- ✨ 新增风险分(leak_score)量化评估
+- ✨ 新增CLI参数：--simulate-cv, --leak-threshold
+- ✨ 升级报告模板：Statistical Leakage板块
+- ✨ 新增示例数据：homecredit_te.csv, fraud_rolling.csv
+- ✨ 新增测试用例：test_te_woe_rolling.py
 
 ### v0.2.0
-- ✨ 新增统计类泄漏检测框架（预览版）
-- 🔧 重构检测器架构，支持模块化扩展
-- 📊 增强HTML报告，新增统计类泄漏预览分区
-- 📋 完善JSON Schema和退出码定义
-- 🔗 优化与tabular-agent的集成接口
-- 📚 新增详细文档和CLI参数规范
+- ✨ 扩展检测规则框架
+- ✨ 新增JSON schema和退出码约定
+- ✨ 新增统计类泄漏预览板块
 
 ### v0.1.0
-- 🎯 基础泄漏检测功能
-- 📊 HTML报告生成
-- 🛠️ 修复脚本生成
-
-## 📄 许可证
-
-MIT License - 详见 [LICENSE](LICENSE) 文件
+- 🎉 初始版本发布
+- ✨ 基础泄漏检测功能
+- ✨ HTML报告生成
+- ✨ 修复脚本生成
 
 ## 🤝 贡献
 
 欢迎提交Issue和Pull Request！
 
+## 📄 许可证
+
+MIT License
+
 ---
 
-**注意**: 统计类泄漏检测功能为预览版，具体实现将在后续版本中完善。
+**Leakage Buster** - 让数据泄漏无处遁形！🕵️‍♂️
