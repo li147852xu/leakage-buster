@@ -1,0 +1,18 @@
+{
+  "args": {
+    "train": "debug_sim2.csv",
+    "target": "y",
+    "time_col": "date",
+    "out": "debug_sim_output2",
+    "cv_type": "timeseries",
+    "simulate_cv": "time",
+    "leak_threshold": 0.02
+  },
+  "n_rows": 20,
+  "n_cols": 4,
+  "target": "y",
+  "time_col": "date",
+  "cv_type": "timeseries",
+  "simulate_cv": "time",
+  "leak_threshold": 0.02
+}

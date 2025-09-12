@@ -1,0 +1,263 @@
+
+<!doctype html><html lang="zh"><meta charset="utf-8"/>
+<title>Leakage Buster 报告</title>
+<style>
+  body{font-family:system-ui,Segoe UI,Arial,PingFang SC; margin:24px}
+  .risk{border:1px solid #ddd; border-radius:8px; padding:12px 16px; margin:12px 0}
+  .sev-high{border-left:6px solid #d9534f}.sev-medium{border-left:6px solid #f0ad4e}.sev-low{border-left:6px solid #5bc0de}
+  code,pre{background:#f8f8f8; padding:2px 4px; border-radius:4px}
+  .summary{background:#f9f9f9; border:1px solid #ddd; border-radius:8px; padding:16px; margin:16px 0}
+  .fix-card{background:#e8f5e8; border:1px solid #c3e6c3; border-radius:8px; padding:12px; margin:8px 0}
+  .fix-high{background:#fdf2f2; border-color:#f5c6cb}
+  .fix-medium{background:#fff3cd; border-color:#ffeaa7}
+  .fix-low{background:#d1ecf1; border-color:#bee5eb}
+  .stat-leak-section{background:#f0f8ff; border:2px solid #4a90e2; border-radius:8px; padding:16px; margin:16px 0}
+  .leak-score{font-weight:bold; color:#d9534f}
+  .evidence-toggle{cursor:pointer; color:#4a90e2; text-decoration:underline}
+  .evidence-details{display:none; margin-top:8px; padding:8px; background:#f8f9fa; border-radius:4px}
+  .simulation-results{background:#fff3cd; border:1px solid #ffeaa7; border-radius:8px; padding:12px; margin:12px 0}
+  .comparison-table{border-collapse:collapse; width:100%; margin:8px 0}
+  .comparison-table th, .comparison-table td{border:1px solid #ddd; padding:8px; text-align:left}
+  .comparison-table th{background:#f5f5f5}
+  .leak-high{background:#fdf2f2}
+  .leak-medium{background:#fff3cd}
+  .leak-low{background:#d1ecf1}
+  ul{margin:8px 0; padding-left:20px}
+</style>
+<h1>Leakage Buster 报告 v0.3</h1>
+<div>命令参数：<code>{'train': 'debug_sim3.csv', 'target': 'y', 'time_col': 'date', 'out': 'debug_sim_output3', 'cv_type': 'timeseries', 'simulate_cv': 'time', 'leak_threshold': 0.02}</code></div>
+<div>目标列：<code>y</code>；时间列：<code>date</code>；CV策略：<code>timeseries</code></div>
+<div>样本数：20；特征数：4</div>
+
+<div>时序模拟：<code>time</code>；泄漏阈值：<code>0.02</code></div>
+
+
+<!-- 修复建议摘要卡片区域 -->
+
+<div class="summary">
+  <h2>🔧 修复建议摘要</h2>
+  
+  
+  
+  
+  
+  <div class="fix-card fix-high">
+    <h4>🚨 高危问题（2个）</h4>
+    <ul>
+    
+      <li><strong>Target leakage (high correlation)</strong>
+        
+          - 立即删除或在CV内重算相关列
+        
+        
+        <span class="leak-score">[风险分: 0.90]</span>
+        
+      </li>
+    
+      <li><strong>Target Encoding leakage risk</strong>
+        
+          - 检查是否使用了全量目标编码，改为CV内编码
+        
+        
+        <span class="leak-score">[风险分: 0.70]</span>
+        
+      </li>
+    
+    </ul>
+  </div>
+  
+  
+  
+  
+  
+  <div class="fix-card fix-low">
+    <h4>💡 建议优化（1个）</h4>
+    <ul>
+    
+      <li><strong>Time-awareness suggestion</strong>
+        
+          - 使用时间感知的特征工程和验证策略
+        
+        
+        <span class="leak-score">[风险分: 0.30]</span>
+        
+      </li>
+    
+    </ul>
+  </div>
+  
+  
+  <p><strong>详细修复代码见：</strong> <code>fix_transforms.py</code></p>
+</div>
+
+
+<hr/>
+
+<!-- Statistical Leakage 板块 -->
+<div class="stat-leak-section">
+  <h2>📊 Statistical Leakage Detection</h2>
+  <p><em>v0.3新增：检测目标编码(TE)、WOE、滚动统计等统计类泄漏</em></p>
+  
+  
+  
+    <h3>检测到的统计类泄漏风险</h3>
+    
+      <div class="risk sev-high">
+        <h4>Target Encoding leakage risk 
+          
+          <span class="leak-score">[风险分: 0.70]</span>
+          
+        </h4>
+        <p>检测到 1 个疑似目标编码特征，与目标高相关且值域可疑。</p>
+        
+        
+        <div>
+          <span class="evidence-toggle" onclick="toggleEvidence('Target_Encoding_leakage_risk')">点击查看详细证据</span>
+          <div id="Target_Encoding_leakage_risk" class="evidence-details">
+            <h5>可疑特征详情：</h5>
+            <table class="comparison-table">
+              <tr>
+                <th>特征名</th>
+                <th>相关性</th>
+                <th>风险分</th>
+                <th>建议</th>
+              </tr>
+              
+              <tr class="leak-high">
+                <td><code>target_enc_feature</code></td>
+                <td>0.996</td>
+                <td>0.70</td>
+                <td>
+                  
+                    删除或改为CV内编码
+                  
+                </td>
+              </tr>
+              
+            </table>
+          </div>
+        </div>
+        
+      </div>
+    
+  
+</div>
+
+<hr/>
+
+<!-- 时序模拟结果 -->
+
+<div class="simulation-results">
+  <h2>⏰ Time Series Simulation Results</h2>
+  <p><em>对比TimeSeriesSplit与KFold的OOF指标变化</em></p>
+  
+  
+    <div>
+      <h3>模拟摘要</h3>
+      <ul>
+        <li>总特征数：1</li>
+        <li>泄漏特征数：0</li>
+        <li>高危泄漏特征数：0</li>
+        <li>泄漏率：0.0%</li>
+        <li>平均分数差异：0.0000</li>
+        <li>最大分数差异：0.0000</li>
+      </ul>
+    </div>
+    
+    
+    <div>
+      <h3>详细对比结果</h3>
+      <table class="comparison-table">
+        <tr>
+          <th>特征名</th>
+          <th>TimeSeries CV</th>
+          <th>KFold CV</th>
+          <th>分数差异</th>
+          <th>泄漏状态</th>
+          <th>严重程度</th>
+        </tr>
+        
+        <tr class="leak-none">
+          <td><code>target_enc_feature</code></td>
+          <td>1.0000 ± 0.0000</td>
+          <td>1.0000 ± 0.0000</td>
+          <td>0.0000</td>
+          <td>✅ 否</td>
+          <td>NONE</td>
+        </tr>
+        
+      </table>
+    </div>
+    
+  
+</div>
+
+
+<hr/>
+
+<!-- 详细风险项 -->
+<h2>📋 详细检测结果</h2>
+
+  
+    <div class="risk sev-high">
+      <h3>Target leakage (high correlation)（high）
+        
+        <span class="leak-score">[风险分: 0.90]</span>
+        
+      </h3>
+      <p>以下列与目标高度相关（|corr|或R²≥0.98），可能泄漏。</p>
+      <pre>{
+  "columns": {
+    "target_enc_feature": 0.9917124526189287
+  }
+}</pre>
+    </div>
+  
+    <div class="risk sev-high">
+      <h3>Target Encoding leakage risk（high）
+        
+        <span class="leak-score">[风险分: 0.70]</span>
+        
+      </h3>
+      <p>检测到 1 个疑似目标编码特征，与目标高相关且值域可疑。</p>
+      <pre>{
+  "suspicious_columns": {
+    "target_enc_feature": {
+      "correlation": 0.9958476051178359,
+      "leak_score": 0.7,
+      "mean": 0.3179025922144486,
+      "target_mean": 0.3
+    }
+  }
+}</pre>
+    </div>
+  
+    <div class="risk sev-low">
+      <h3>Time-awareness suggestion（low）
+        
+        <span class="leak-score">[风险分: 0.30]</span>
+        
+      </h3>
+      <p>建议使用时间感知切分/编码并校验口径一致。</p>
+      <pre>{
+  "max": "2023-01-20 00:00:00",
+  "min": "2023-01-01 00:00:00"
+}</pre>
+    </div>
+  
+
+
+<hr/>
+<p><em>报告生成时间：2025-09-13T07:16:08</em></p>
+
+<script>
+function toggleEvidence(id) {
+  var element = document.getElementById(id);
+  if (element.style.display === "none") {
+    element.style.display = "block";
+  } else {
+    element.style.display = "none";
+  }
+}
+</script>
+</html>

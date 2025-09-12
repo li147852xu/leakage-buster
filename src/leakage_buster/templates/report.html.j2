@@ -11,13 +11,26 @@
   .fix-high{background:#fdf2f2; border-color:#f5c6cb}
   .fix-medium{background:#fff3cd; border-color:#ffeaa7}
   .fix-low{background:#d1ecf1; border-color:#bee5eb}
-  .preview-section{background:#f0f8ff; border:2px dashed #4a90e2; border-radius:8px; padding:16px; margin:16px 0}
+  .stat-leak-section{background:#f0f8ff; border:2px solid #4a90e2; border-radius:8px; padding:16px; margin:16px 0}
+  .leak-score{font-weight:bold; color:#d9534f}
+  .evidence-toggle{cursor:pointer; color:#4a90e2; text-decoration:underline}
+  .evidence-details{display:none; margin-top:8px; padding:8px; background:#f8f9fa; border-radius:4px}
+  .simulation-results{background:#fff3cd; border:1px solid #ffeaa7; border-radius:8px; padding:12px; margin:12px 0}
+  .comparison-table{border-collapse:collapse; width:100%; margin:8px 0}
+  .comparison-table th, .comparison-table td{border:1px solid #ddd; padding:8px; text-align:left}
+  .comparison-table th{background:#f5f5f5}
+  .leak-high{background:#fdf2f2}
+  .leak-medium{background:#fff3cd}
+  .leak-low{background:#d1ecf1}
   ul{margin:8px 0; padding-left:20px}
 </style>
-<h1>Leakage Buster 报告</h1>
+<h1>Leakage Buster 报告 v0.3</h1>
 <div>命令参数：<code>{{ meta["args"] }}</code></div>
 <div>目标列：<code>{{ meta["target"] }}</code>；时间列：<code>{{ meta["time_col"] or "未指定" }}</code>；CV策略：<code>{{ meta["cv_type"] or "未指定" }}</code></div>
 <div>样本数：{{ meta["n_rows"] }}；特征数：{{ meta["n_cols"] }}</div>
+{% if meta.get("simulate_cv") %}
+<div>时序模拟：<code>{{ meta["simulate_cv"] }}</code>；泄漏阈值：<code>{{ meta["leak_threshold"] }}</code></div>
+{% endif %}
 
 <!-- 修复建议摘要卡片区域 -->
 {% if results["risks"] %}
@@ -35,12 +48,17 @@
       <li><strong>{{ r["name"] }}</strong>
         {% if r["name"].startswith("Target leakage") %}
           - 立即删除或在CV内重算相关列
-        {% elif r["name"].startswith("Target encoding") %}
+        {% elif r["name"].startswith("Target Encoding") %}
           - 检查是否使用了全量目标编码，改为CV内编码
-        {% elif r["name"].startswith("Time window") %}
-          - 确保统计特征仅使用窗口内数据
-        {% elif r["name"].startswith("CV strategy") %}
-          - 调整CV策略以匹配数据特征
+        {% elif r["name"].startswith("WOE") %}
+          - 检查WOE计算是否使用了未来信息
+        {% elif r["name"].startswith("Rolling statistics") %}
+          - 确保滚动统计仅使用历史窗口数据
+        {% elif r["name"].startswith("Aggregation traces") %}
+          - 检查聚合统计是否在CV内正确计算
+        {% endif %}
+        {% if r.get("leak_score", 0) > 0 %}
+        <span class="leak-score">[风险分: {{ "%.2f"|format(r["leak_score"]) }}]</span>
         {% endif %}
       </li>
     {% endfor %}
@@ -58,8 +76,9 @@
           - 考虑使用GroupKFold避免组间泄漏
         {% elif r["name"].startswith("Target leakage (categorical") %}
           - 检查类别特征是否由目标聚合产生
-        {% elif r["name"].startswith("Statistical leakage") %}
-          - 确认统计特征在CV内正确计算
+        {% endif %}
+        {% if r.get("leak_score", 0) > 0 %}
+        <span class="leak-score">[风险分: {{ "%.2f"|format(r["leak_score"]) }}]</span>
         {% endif %}
       </li>
     {% endfor %}
@@ -78,6 +97,9 @@
         {% elif r["name"].startswith("CV strategy recommendation") %}
           - 考虑采用推荐的CV策略
         {% endif %}
+        {% if r.get("leak_score", 0) > 0 %}
+        <span class="leak-score">[风险分: {{ "%.2f"|format(r["leak_score"]) }}]</span>
+        {% endif %}
       </li>
     {% endfor %}
     </ul>
@@ -90,29 +112,117 @@
 
 <hr/>
 
-<!-- 统计类泄漏（预览）分区 -->
-<div class="preview-section">
-  <h2>📊 统计类泄漏（预览）</h2>
-  <p><em>此功能为预览版，用于检测疑似统计特征泄漏。具体实现将在后续版本中完善。</em></p>
+<!-- Statistical Leakage 板块 -->
+<div class="stat-leak-section">
+  <h2>📊 Statistical Leakage Detection</h2>
+  <p><em>v0.3新增：检测目标编码(TE)、WOE、滚动统计等统计类泄漏</em></p>
   
-  {% set stat_risks = results["risks"] | selectattr("name", "equalto", "Statistical leakage (preview)") | list %}
+  {% set stat_risks = [] %}{% for r in results["risks"] %}{% if "Target Encoding" in r["name"] or "WOE" in r["name"] or "Rolling statistics" in r["name"] or "Aggregation traces" in r["name"] %}{% set _ = stat_risks.append(r) %}{% endif %}{% endfor %}
   {% if stat_risks %}
-    <div class="risk sev-medium">
-      <h3>统计特征检测结果</h3>
-      {% for r in stat_risks %}
+    <h3>检测到的统计类泄漏风险</h3>
+    {% for r in stat_risks %}
+      <div class="risk sev-{{ 'high' if r['severity']=='high' else 'medium' if r['severity']=='medium' else 'low' }}">
+        <h4>{{ r["name"] }} 
+          {% if r.get("leak_score", 0) > 0 %}
+          <span class="leak-score">[风险分: {{ "%.2f"|format(r["leak_score"]) }}]</span>
+          {% endif %}
+        </h4>
         <p>{{ r["detail"] }}</p>
+        
+        {% if r["evidence"].get("suspicious_columns") %}
+        <div>
+          <span class="evidence-toggle" onclick="toggleEvidence('{{ r['name']|replace(' ', '_') }}')">点击查看详细证据</span>
+          <div id="{{ r['name']|replace(' ', '_') }}" class="evidence-details">
+            <h5>可疑特征详情：</h5>
+            <table class="comparison-table">
+              <tr>
+                <th>特征名</th>
+                <th>相关性</th>
+                <th>风险分</th>
+                <th>建议</th>
+              </tr>
+              {% for col, details in r["evidence"]["suspicious_columns"].items() %}
+              <tr class="leak-{{ 'high' if details.get('leak_score', 0) >= 0.7 else 'medium' if details.get('leak_score', 0) >= 0.5 else 'low' }}">
+                <td><code>{{ col }}</code></td>
+                <td>{{ "%.3f"|format(details.get('correlation', 0)) }}</td>
+                <td>{{ "%.2f"|format(details.get('leak_score', 0)) }}</td>
+                <td>
+                  {% if 'te' in col.lower() or 'target_enc' in col.lower() %}
+                    删除或改为CV内编码
+                  {% elif 'woe' in col.lower() %}
+                    检查WOE计算时间窗口
+                  {% elif 'rolling' in col.lower() or 'moving' in col.lower() %}
+                    确保仅使用历史窗口
+                  {% else %}
+                    检查聚合统计计算方式
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </table>
+          </div>
+        </div>
+        {% else %}
         <pre>{{ r["evidence"] | tojson(indent=2) }}</pre>
-      {% endfor %}
-    </div>
+        {% endif %}
+      </div>
+    {% endfor %}
   {% else %}
-    <p>✅ 未检测到明显的统计特征泄漏。</p>
+    <p>✅ 未检测到明显的统计类泄漏风险。</p>
   {% endif %}
-  
-  <div style="margin-top: 12px; padding: 8px; background: #fff3cd; border-radius: 4px;">
-    <strong>注意：</strong>此预览功能主要检测变异系数较小的数值特征，这些特征可能是聚合统计结果。
-    建议在特征工程时确保所有统计特征都在交叉验证的折叠内正确计算。
-  </div>
 </div>
+
+<hr/>
+
+<!-- 时序模拟结果 -->
+{% if simulation %}
+<div class="simulation-results">
+  <h2>⏰ Time Series Simulation Results</h2>
+  <p><em>对比TimeSeriesSplit与KFold的OOF指标变化</em></p>
+  
+  {% if simulation.get("error") %}
+    <p style="color: #d9534f;">❌ 模拟失败：{{ simulation["error"] }}</p>
+  {% else %}
+    <div>
+      <h3>模拟摘要</h3>
+      <ul>
+        <li>总特征数：{{ simulation["summary"]["total_features"] }}</li>
+        <li>泄漏特征数：{{ simulation["summary"]["leak_features"] }}</li>
+        <li>高危泄漏特征数：{{ simulation["summary"]["high_leak_features"] }}</li>
+        <li>泄漏率：{{ "%.1f"|format(simulation["summary"]["leak_rate"] * 100) }}%</li>
+        <li>平均分数差异：{{ "%.4f"|format(simulation["summary"]["avg_score_diff"]) }}</li>
+        <li>最大分数差异：{{ "%.4f"|format(simulation["summary"]["max_score_diff"]) }}</li>
+      </ul>
+    </div>
+    
+    {% if simulation["simulation_results"]["comparisons"] %}
+    <div>
+      <h3>详细对比结果</h3>
+      <table class="comparison-table">
+        <tr>
+          <th>特征名</th>
+          <th>TimeSeries CV</th>
+          <th>KFold CV</th>
+          <th>分数差异</th>
+          <th>泄漏状态</th>
+          <th>严重程度</th>
+        </tr>
+        {% for comp in simulation["simulation_results"]["comparisons"] %}
+        <tr class="leak-{{ comp.get('leak_severity', 'none') }}">
+          <td><code>{{ comp["feature"] }}</code></td>
+          <td>{{ "%.4f"|format(comp["timeseries_cv"]["mean"]) }} ± {{ "%.4f"|format(comp["timeseries_cv"]["std"]) }}</td>
+          <td>{{ "%.4f"|format(comp["kfold_cv"]["mean"]) }} ± {{ "%.4f"|format(comp["kfold_cv"]["std"]) }}</td>
+          <td>{{ "%.4f"|format(comp["score_difference"]) }}</td>
+          <td>{% if comp["is_leak"] %}🚨 是{% else %}✅ 否{% endif %}</td>
+          <td>{{ comp.get("leak_severity", "none").upper() }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% endif %}
+  {% endif %}
+</div>
+{% endif %}
 
 <hr/>
 
@@ -121,7 +231,11 @@
 {% if results["risks"] %}
   {% for r in results["risks"] %}
     <div class="risk sev-{{ 'high' if r['severity']=='high' else 'medium' if r['severity']=='medium' else 'low' }}">
-      <h3>{{ r["name"] }}（{{ r["severity"] }}）</h3>
+      <h3>{{ r["name"] }}（{{ r["severity"] }}）
+        {% if r.get("leak_score", 0) > 0 %}
+        <span class="leak-score">[风险分: {{ "%.2f"|format(r["leak_score"]) }}]</span>
+        {% endif %}
+      </h3>
       <p>{{ r["detail"] }}</p>
       <pre>{{ r["evidence"] | tojson(indent=2) }}</pre>
     </div>
@@ -132,5 +246,16 @@
 
 <hr/>
 <p><em>报告生成时间：{{ now }}</em></p>
+
+<script>
+function toggleEvidence(id) {
+  var element = document.getElementById(id);
+  if (element.style.display === "none") {
+    element.style.display = "block";
+  } else {
+    element.style.display = "none";
+  }
+}
+</script>
 </html>
 

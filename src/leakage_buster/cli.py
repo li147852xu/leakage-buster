@@ -4,9 +4,11 @@ import argparse, os, json, sys
 import pandas as pd
 from .core.checks import run_checks
 from .core.report import render_report, write_fix_script, write_meta
+from .core.simulator import run_time_series_simulation
 
-def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_type: str | None = None):
-    """运行泄漏检测"""
+def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_type: str | None = None, 
+        simulate_cv: str | None = None, leak_threshold: float = 0.02):
+    """运行泄漏检测 - v0.3版本"""
     try:
         # 验证输入文件
         if not os.path.exists(train_path):
@@ -72,14 +74,42 @@ def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_typ
                 }
             }
         
+        # 运行时序模拟（如果启用）
+        simulation_results = None
+        if simulate_cv == "time":
+            try:
+                # 提取可疑特征
+                suspicious_cols = []
+                for risk in results.get("risks", []):
+                    if "suspicious_columns" in risk.get("evidence", {}):
+                        suspicious_cols.extend(risk["evidence"]["suspicious_columns"].keys())
+                
+                if suspicious_cols:
+                    simulation_results = run_time_series_simulation(
+                        df, target, time_col, suspicious_cols, leak_threshold
+                    )
+            except Exception as e:
+                # 模拟失败不影响主流程
+                simulation_results = {"error": f"Simulation failed: {str(e)}"}
+        
         # 准备元数据
         meta = {
-            "args": {"train": train_path, "target": target, "time_col": time_col, "out": out_dir, "cv_type": cv_type},
+            "args": {
+                "train": train_path, 
+                "target": target, 
+                "time_col": time_col, 
+                "out": out_dir, 
+                "cv_type": cv_type,
+                "simulate_cv": simulate_cv,
+                "leak_threshold": leak_threshold
+            },
             "n_rows": int(len(df)),
             "n_cols": int(df.shape[1]),
             "target": target,
             "time_col": time_col,
             "cv_type": cv_type,
+            "simulate_cv": simulate_cv,
+            "leak_threshold": leak_threshold,
         }
         
         # 创建输出目录
@@ -99,7 +129,7 @@ def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_typ
         # 生成输出文件
         try:
             write_meta(meta, out_dir)
-            report_path = render_report(results, meta, out_dir)
+            report_path = render_report(results, meta, out_dir, simulation_results)
             fix_path = write_fix_script(results, out_dir)
         except Exception as e:
             return {
@@ -113,15 +143,21 @@ def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_typ
             }
         
         # 返回成功结果
+        result_data = {
+            "report": report_path,
+            "fix_script": fix_path,
+            "meta": meta,
+            "risks": results["risks"]
+        }
+        
+        # 添加模拟结果
+        if simulation_results:
+            result_data["simulation"] = simulation_results
+        
         return {
             "status": "success",
             "exit_code": 0,
-            "data": {
-                "report": report_path,
-                "fix_script": fix_path,
-                "meta": meta,
-                "risks": results["risks"]
-            }
+            "data": result_data
         }
         
     except Exception as e:
@@ -145,6 +181,10 @@ def build_parser():
     run_p.add_argument("--time-col", type=str, default=None)
     run_p.add_argument("--cv-type", type=str, choices=["kfold", "timeseries", "group"], default=None, 
                        help="CV strategy: kfold/timeseries/group")
+    run_p.add_argument("--simulate-cv", type=str, choices=["time"], default=None,
+                       help="Enable time series simulation: time")
+    run_p.add_argument("--leak-threshold", type=float, default=0.02,
+                       help="Leak threshold for simulation (default: 0.02)")
     run_p.add_argument("--out", type=str, required=True)
     return p
 
@@ -153,7 +193,8 @@ def main():
     args = parser.parse_args()
     
     if args.cmd == "run" or (args.cmd is None and hasattr(args, "train")):
-        result = run(args.train, args.target, args.time_col, args.out, args.cv_type)
+        result = run(args.train, args.target, args.time_col, args.out, 
+                    args.cv_type, args.simulate_cv, args.leak_threshold)
         
         # 输出JSON结果
         print(json.dumps(result, ensure_ascii=False, indent=2))

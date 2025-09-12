@@ -1,0 +1,18 @@
+{
+  "args": {
+    "train": "debug_test.csv",
+    "target": "y",
+    "time_col": null,
+    "out": "debug_output",
+    "cv_type": "kfold",
+    "simulate_cv": null,
+    "leak_threshold": 0.02
+  },
+  "n_rows": 10,
+  "n_cols": 2,
+  "target": "y",
+  "time_col": null,
+  "cv_type": "kfold",
+  "simulate_cv": null,
+  "leak_threshold": 0.02
+}
