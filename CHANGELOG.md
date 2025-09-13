@@ -6,6 +6,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2024-12-19
+
+### Added
+- 创建详细的中英双语README文档
+- 添加完整的安装指南（INSTALLATION_GUIDE.md）
+- 添加快速开始示例数据（quick_start_example.csv）
+- 详细的pip依赖自动检测说明
+- 完整的使用示例和故障排除指南
+- Python SDK使用示例和CI/CD集成指南
+
+### Improved
+- README文档结构优化，英文为主中文为辅
+- 安装流程说明更加详细和清晰
+- 参数参考表添加双语说明
+- 性能基准和版本历史完善
+
 ## [1.0.1] - 2024-12-19
 
 ### Fixed
