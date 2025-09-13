@@ -33,18 +33,10 @@ jobs:
           pip install -e .[dev] || pip install -e .
           pip install pytest pytest-cov
 
-      - name: Run tests with coverage
+      - name: Run tests
         run: |
-          pytest -q --cov=leakage_buster --cov-report=xml
+          pytest -q
 
-      - name: Upload coverage to Codecov
-        if: ${{ always() }}
-        uses: codecov/codecov-action@v4
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.xml
-          flags: unittests
-          fail_ci_if_error: false
 
   leakage-audit:
     name: leakage-audit

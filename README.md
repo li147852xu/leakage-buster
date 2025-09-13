@@ -4,7 +4,6 @@
 [![Python](https://img.shields.io/pypi/pyversions/leakage-buster.svg)](https://pypi.org/project/leakage-buster/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/li147852xu/leakage-buster/actions/workflows/ci.yml/badge.svg)](https://github.com/li147852xu/leakage-buster/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/li147852xu/leakage-buster/branch/main/graph/badge.svg)](https://codecov.io/gh/li147852xu/leakage-buster)
 
 > 专业的**时间泄漏 / KFold 泄漏 / 口径一致性审计**工具，提供报告与修复建议，支持 CLI 与 Python SDK。
 
