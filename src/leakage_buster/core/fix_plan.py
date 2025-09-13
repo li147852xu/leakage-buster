@@ -1,172 +1,164 @@
 
 from __future__ import annotations
-from typing import List, Dict, Any, Optional, Literal
 from pydantic import BaseModel, Field
-from datetime import datetime
+from typing import List, Dict, Any, Optional
+from enum import Enum
 
-class FixAction(BaseModel):
-    """修复动作"""
-    action_type: Literal["delete", "recalculate", "recommend_cv", "recommend_groups"]
-    target: str  # 目标列名或CV策略
-    reason: str  # 修复原因
-    evidence: Dict[str, Any]  # 证据引用
-    severity: Literal["high", "medium", "low"]
+class FixAction(str, Enum):
+    """修复动作类型"""
+    DELETE = "delete"
+    RECALCULATE = "recalculate"
+    RECOMMEND_CV = "recommend_cv"
+    RECOMMEND_GROUPS = "recommend_groups"
+
+class FixItem(BaseModel):
+    """单个修复项"""
+    action: FixAction
+    column: str
+    reason: str
+    evidence: Dict[str, Any]
+    risk_source: str  # 来源风险项名称
+    severity: str  # high, medium, low
     confidence: float = Field(ge=0.0, le=1.0)  # 置信度
+    details: Optional[str] = None
 
 class FixPlan(BaseModel):
     """修复计划"""
-    plan_id: str
-    created_at: datetime
-    source_risks: List[str]  # 来源风险ID列表
-    actions: List[FixAction]
-    summary: Dict[str, Any]
+    version: str = "1.0"
+    total_risks: int
+    high_risk_items: int
+    medium_risk_items: int
+    low_risk_items: int
+    
+    # 修复项列表
+    delete_columns: List[FixItem] = Field(default_factory=list)
+    recalculate_columns: List[FixItem] = Field(default_factory=list)
+    cv_recommendations: List[FixItem] = Field(default_factory=list)
+    group_recommendations: List[FixItem] = Field(default_factory=list)
+    
+    # 元数据
+    created_at: str
+    source_file: str
+    target_column: str
+    time_column: Optional[str] = None
     
     class Config:
         json_encoders = {
-            datetime: lambda v: v.isoformat()
+            # 自定义JSON编码器
         }
 
-class FixResult(BaseModel):
-    """修复结果"""
-    success: bool
-    message: str
-    fixed_columns: List[str]
-    removed_columns: List[str]
-    recommended_cv: Optional[str] = None
-    recommended_groups: List[str] = []
-    warnings: List[str] = []
-
-def create_fix_plan(risks: List[Dict], plan_id: str = None) -> FixPlan:
+def create_fix_plan(risks: List[Dict], source_file: str, target: str, time_col: Optional[str] = None) -> FixPlan:
     """从风险列表创建修复计划"""
-    if plan_id is None:
-        plan_id = f"fix_plan_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    import datetime
     
-    actions = []
-    source_risks = []
+    delete_items = []
+    recalculate_items = []
+    cv_items = []
+    group_items = []
+    
+    high_count = 0
+    medium_count = 0
+    low_count = 0
     
     for risk in risks:
-        risk_id = risk.get("name", "unknown")
-        source_risks.append(risk_id)
-        
-        risk_name = risk["name"]
-        severity = risk.get("severity", "medium")
+        risk_name = risk.get("name", "")
+        severity = risk.get("severity", "low")
         evidence = risk.get("evidence", {})
         
-        if risk_name.startswith("Target leakage (high correlation)"):
+        if severity == "high":
+            high_count += 1
+        elif severity == "medium":
+            medium_count += 1
+        else:
+            low_count += 1
+        
+        # 根据风险类型创建修复项
+        if "Target leakage (high correlation)" in risk_name:
             # 删除高相关列
             columns = list(evidence.get("columns", {}).keys())
             for col in columns:
-                actions.append(FixAction(
-                    action_type="delete",
-                    target=col,
-                    reason=f"高相关性泄漏 (corr={evidence['columns'][col]:.3f})",
-                    evidence={"correlation": evidence["columns"][col]},
-                    severity="high",
-                    confidence=0.9
+                delete_items.append(FixItem(
+                    action=FixAction.DELETE,
+                    column=col,
+                    reason=f"高相关性泄漏：与目标相关性过高",
+                    evidence=evidence,
+                    risk_source=risk_name,
+                    severity=severity,
+                    confidence=0.9,
+                    details=f"相关性: {evidence.get('columns', {}).get(col, 'N/A')}"
                 ))
         
-        elif risk_name.startswith("Target encoding leakage"):
+        elif "Target encoding leakage" in risk_name:
             # 重算目标编码
             columns = list(evidence.get("suspicious_columns", {}).keys())
             for col in columns:
-                actions.append(FixAction(
-                    action_type="recalculate",
-                    target=col,
-                    reason="疑似目标编码泄漏，需要在CV内重算",
-                    evidence=evidence["suspicious_columns"][col],
-                    severity="high",
-                    confidence=0.8
+                recalculate_items.append(FixItem(
+                    action=FixAction.RECALCULATE,
+                    column=col,
+                    reason=f"目标编码泄漏：疑似使用全量数据计算",
+                    evidence=evidence,
+                    risk_source=risk_name,
+                    severity=severity,
+                    confidence=0.8,
+                    details=f"建议在CV内重新计算目标编码"
                 ))
         
-        elif risk_name.startswith("WOE leakage"):
-            # 重算WOE
-            columns = list(evidence.get("suspicious_columns", {}).keys())
-            for col in columns:
-                actions.append(FixAction(
-                    action_type="recalculate",
-                    target=col,
-                    reason="疑似WOE泄漏，需要检查计算时间窗口",
-                    evidence=evidence["suspicious_columns"][col],
-                    severity="high",
-                    confidence=0.8
-                ))
-        
-        elif risk_name.startswith("Rolling statistics leakage"):
+        elif "Rolling statistics leakage" in risk_name:
             # 重算滚动统计
             columns = list(evidence.get("suspicious_columns", {}).keys())
             for col in columns:
-                actions.append(FixAction(
-                    action_type="recalculate",
-                    target=col,
-                    reason="疑似滚动统计泄漏，需要确保仅使用历史窗口",
-                    evidence=evidence["suspicious_columns"][col],
-                    severity="high",
-                    confidence=0.8
+                recalculate_items.append(FixItem(
+                    action=FixAction.RECALCULATE,
+                    column=col,
+                    reason=f"滚动统计泄漏：疑似使用未来信息",
+                    evidence=evidence,
+                    risk_source=risk_name,
+                    severity=severity,
+                    confidence=0.85,
+                    details=f"建议仅使用历史窗口数据重新计算"
                 ))
         
-        elif risk_name.startswith("KFold leakage risk"):
+        elif "KFold leakage risk" in risk_name:
             # 推荐GroupKFold
             candidates = evidence.get("candidates", [])
-            group_cols = [c["column"] for c in candidates if c.get("dup_rate", 0) > 0.8]
-            if group_cols:
-                actions.append(FixAction(
-                    action_type="recommend_groups",
-                    target=",".join(group_cols),
-                    reason=f"高重复列建议用作GroupKFold的groups",
-                    evidence={"candidates": candidates},
-                    severity="medium",
-                    confidence=0.7
+            for candidate in candidates:
+                group_items.append(FixItem(
+                    action=FixAction.RECOMMEND_GROUPS,
+                    column=candidate.get("column", ""),
+                    reason=f"分组泄漏风险：高重复率列",
+                    evidence=evidence,
+                    risk_source=risk_name,
+                    severity=severity,
+                    confidence=0.7,
+                    details=f"重复率: {candidate.get('dup_rate', 'N/A')}"
                 ))
         
-        elif risk_name.startswith("CV strategy recommendation"):
+        elif "CV strategy recommendation" in risk_name:
             # 推荐CV策略
-            recommended = evidence.get("recommended", "kfold")
-            actions.append(FixAction(
-                action_type="recommend_cv",
-                target=recommended,
-                reason=f"根据数据特征推荐CV策略: {recommended}",
+            recommended = evidence.get("recommended", "")
+            cv_items.append(FixItem(
+                action=FixAction.RECOMMEND_CV,
+                column="",
+                reason=f"CV策略推荐：{recommended}",
                 evidence=evidence,
-                severity="low",
-                confidence=0.6
+                risk_source=risk_name,
+                severity=severity,
+                confidence=0.6,
+                details=f"数据特征: 时间列={evidence.get('has_time', False)}, 分组={evidence.get('has_groups', False)}"
             ))
     
-    # 生成摘要
-    summary = {
-        "total_actions": len(actions),
-        "high_severity": len([a for a in actions if a.severity == "high"]),
-        "medium_severity": len([a for a in actions if a.severity == "medium"]),
-        "low_severity": len([a for a in actions if a.severity == "low"]),
-        "delete_actions": len([a for a in actions if a.action_type == "delete"]),
-        "recalculate_actions": len([a for a in actions if a.action_type == "recalculate"]),
-        "recommend_actions": len([a for a in actions if a.action_type in ["recommend_cv", "recommend_groups"]])
-    }
-    
     return FixPlan(
-        plan_id=plan_id,
-        created_at=datetime.now(),
-        source_risks=source_risks,
-        actions=actions,
-        summary=summary
+        total_risks=len(risks),
+        high_risk_items=high_count,
+        medium_risk_items=medium_count,
+        low_risk_items=low_count,
+        delete_columns=delete_items,
+        recalculate_columns=recalculate_items,
+        cv_recommendations=cv_items,
+        group_recommendations=group_items,
+        created_at=datetime.datetime.now().isoformat(),
+        source_file=source_file,
+        target_column=target,
+        time_column=time_col
     )
-
-def save_fix_plan(plan: FixPlan, output_path: str) -> str:
-    """保存修复计划到JSON文件"""
-    import json
-    import os
-    
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(plan.dict(), f, ensure_ascii=False, indent=2, default=str)
-    
-    return output_path
-
-def load_fix_plan(input_path: str) -> FixPlan:
-    """从JSON文件加载修复计划"""
-    import json
-    
-    with open(input_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    
-    return FixPlan(**data)
 

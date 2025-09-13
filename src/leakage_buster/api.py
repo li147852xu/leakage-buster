@@ -1,62 +1,84 @@
 
 from __future__ import annotations
 import pandas as pd
-from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass
+from typing import Dict, Optional, Any
 from .core.checks import run_checks
-from .core.simulator import run_time_series_simulation
-from .core.cv_policy import audit_cv_policy
 from .core.fix_plan import create_fix_plan, FixPlan
-from .core.fix_apply import apply_fixes, apply_minimal_fixes
+from .core.fix_apply import apply_fixes, get_fix_summary, validate_fix_plan
+from .core.cv_policy import audit_cv_policy
+from .core.simulator import run_time_series_simulation
+from .core.export import export_report
 
-@dataclass
 class AuditResult:
-    """审计结果"""
-    risks: List[Dict[str, Any]]
-    simulation: Optional[Dict[str, Any]] = None
-    policy_audit: Optional[Dict[str, Any]] = None
-    meta: Dict[str, Any] = None
+    """审计结果类"""
     
-    def get_high_risk_count(self) -> int:
-        """获取高危风险数量"""
-        return len([r for r in self.risks if r.get("severity") == "high"])
+    def __init__(self, data: Dict, meta: Dict):
+        self.data = data
+        self.meta = meta
+        self.risks = data.get("risks", [])
+        self.simulation = data.get("simulation")
+        self.policy_audit = data.get("policy_audit")
     
-    def get_medium_risk_count(self) -> int:
-        """获取中危风险数量"""
-        return len([r for r in self.risks if r.get("severity") == "medium"])
-    
-    def get_low_risk_count(self) -> int:
-        """获取低危风险数量"""
-        return len([r for r in self.risks if r.get("severity") == "low"])
-    
+    @property
     def has_high_risk(self) -> bool:
         """是否有高危风险"""
-        return self.get_high_risk_count() > 0
+        return any(risk.get("severity") == "high" for risk in self.risks)
     
-    def get_exit_code(self) -> int:
-        """获取退出码"""
-        if self.has_high_risk():
-            return 3  # high-leakage-found
-        elif self.get_medium_risk_count() > 0:
-            return 2  # warnings
-        else:
-            return 0  # ok
+    @property
+    def has_medium_risk(self) -> bool:
+        """是否有中危风险"""
+        return any(risk.get("severity") == "medium" for risk in self.risks)
+    
+    @property
+    def risk_count(self) -> int:
+        """风险总数"""
+        return len(self.risks)
+    
+    @property
+    def high_risk_count(self) -> int:
+        """高危风险数"""
+        return sum(1 for risk in self.risks if risk.get("severity") == "high")
+    
+    @property
+    def medium_risk_count(self) -> int:
+        """中危风险数"""
+        return sum(1 for risk in self.risks if risk.get("severity") == "medium")
+    
+    @property
+    def low_risk_count(self) -> int:
+        """低危风险数"""
+        return sum(1 for risk in self.risks if risk.get("severity") == "low")
+    
+    def to_dict(self) -> Dict:
+        """转换为字典"""
+        return {
+            "data": self.data,
+            "meta": self.meta,
+            "summary": {
+                "total_risks": self.risk_count,
+                "high_risks": self.high_risk_count,
+                "medium_risks": self.medium_risk_count,
+                "low_risks": self.low_risk_count,
+                "has_high_risk": self.has_high_risk,
+                "has_medium_risk": self.has_medium_risk
+            }
+        }
 
 def audit(df: pd.DataFrame, target: str, time_col: Optional[str] = None, 
-          cv_type: Optional[str] = None, simulate_cv: bool = False, 
+          cv_type: Optional[str] = None, simulate_cv: Optional[str] = None,
           leak_threshold: float = 0.02, cv_policy_file: Optional[str] = None,
           **opts) -> AuditResult:
     """
-    审计数据泄漏
+    审计数据框的泄漏风险
     
     Args:
         df: 数据框
         target: 目标列名
         time_col: 时间列名（可选）
-        cv_type: CV策略（kfold/timeseries/group）
-        simulate_cv: 是否启用时序模拟
-        leak_threshold: 泄漏阈值
-        cv_policy_file: CV策略配置文件路径
+        cv_type: CV策略类型（可选）
+        simulate_cv: 是否启用时序模拟（可选）
+        leak_threshold: 泄漏阈值（默认0.02）
+        cv_policy_file: CV策略文件路径（可选）
         **opts: 其他选项
     
     Returns:
@@ -66,15 +88,15 @@ def audit(df: pd.DataFrame, target: str, time_col: Optional[str] = None,
     results = run_checks(df, target=target, time_col=time_col, cv_type=cv_type)
     
     # 运行时序模拟（如果启用）
-    simulation = None
-    if simulate_cv and time_col:
+    simulation_results = None
+    if simulate_cv == "time":
         suspicious_cols = []
         for risk in results.get("risks", []):
             if "suspicious_columns" in risk.get("evidence", {}):
                 suspicious_cols.extend(risk["evidence"]["suspicious_columns"].keys())
         
         if suspicious_cols:
-            simulation = run_time_series_simulation(
+            simulation_results = run_time_series_simulation(
                 df, target, time_col, suspicious_cols, leak_threshold
             )
     
@@ -85,91 +107,124 @@ def audit(df: pd.DataFrame, target: str, time_col: Optional[str] = None,
     
     # 准备元数据
     meta = {
-        "n_rows": len(df),
-        "n_cols": df.shape[1],
+        "n_rows": int(len(df)),
+        "n_cols": int(df.shape[1]),
         "target": target,
         "time_col": time_col,
         "cv_type": cv_type,
         "simulate_cv": simulate_cv,
         "leak_threshold": leak_threshold,
-        "cv_policy_file": cv_policy_file
+        "cv_policy_file": cv_policy_file,
+        **opts
     }
     
-    return AuditResult(
-        risks=results.get("risks", []),
-        simulation=simulation,
-        policy_audit=policy_audit,
-        meta=meta
-    )
+    # 构建结果数据
+    data = {
+        "risks": results["risks"],
+        "simulation": simulation_results,
+        "policy_audit": policy_audit
+    }
+    
+    return AuditResult(data, meta)
 
-def plan_fixes(audit_result: AuditResult, plan_id: Optional[str] = None) -> FixPlan:
+def plan_fixes(audit_result: AuditResult, source_file: str = "data.csv") -> FixPlan:
     """
-    制定修复计划
+    基于审计结果创建修复计划
     
     Args:
         audit_result: 审计结果
-        plan_id: 修复计划ID（可选）
+        source_file: 源文件名
     
     Returns:
         FixPlan: 修复计划
     """
-    return create_fix_plan(audit_result.risks, plan_id)
+    return create_fix_plan(
+        audit_result.risks,
+        source_file,
+        audit_result.meta["target"],
+        audit_result.meta.get("time_col")
+    )
 
-def apply_fixes(df: pd.DataFrame, fix_plan: FixPlan, target: str, 
-                time_col: Optional[str] = None) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+def apply_fixes_to_dataframe(df: pd.DataFrame, fix_plan: FixPlan) -> pd.DataFrame:
     """
-    应用修复计划
+    应用修复计划到数据框
     
     Args:
         df: 数据框
         fix_plan: 修复计划
-        target: 目标列名
-        time_col: 时间列名（可选）
     
     Returns:
-        Tuple[pd.DataFrame, Dict]: 修复后的数据框和结果信息
+        pd.DataFrame: 修复后的数据框
     """
-    from .core.fix_apply import apply_fixes as _apply_fixes
-    
-    result = _apply_fixes(df, fix_plan, target, time_col)
-    
-    # 应用修复
-    if result.success:
-        # 这里需要重新实现apply_fixes来返回修复后的数据框
-        df_fixed = df.copy()
-        for action in fix_plan.actions:
-            if action.action_type == "delete" and action.target in df_fixed.columns:
-                df_fixed = df_fixed.drop(columns=[action.target])
-        
-        return df_fixed, result.dict()
-    else:
-        return df, result.dict()
+    return apply_fixes(
+        df,
+        fix_plan,
+        fix_plan.target_column,
+        fix_plan.time_column
+    )
 
-def apply_minimal_fixes(df: pd.DataFrame, audit_result: AuditResult, 
-                       target: str, time_col: Optional[str] = None) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+def export_audit_result(audit_result: AuditResult, output_dir: str, 
+                       export_pdf: bool = False, export_sarif: bool = False) -> Dict:
     """
-    应用最小修复（仅删除高危泄漏列）
+    导出审计结果
     
     Args:
-        df: 数据框
         audit_result: 审计结果
-        target: 目标列名
-        time_col: 时间列名（可选）
+        output_dir: 输出目录
+        export_pdf: 是否导出PDF
+        export_sarif: 是否导出SARIF
     
     Returns:
-        Tuple[pd.DataFrame, Dict]: 修复后的数据框和结果信息
+        Dict: 导出结果
     """
-    df_fixed, result = apply_minimal_fixes(df, audit_result.risks, target, time_col)
-    return df_fixed, result.dict()
+    import os
+    from .core.report import render_report, write_meta
+    
+    # 创建输出目录
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # 生成HTML报告
+    report_path = render_report(
+        audit_result.data,
+        audit_result.meta,
+        output_dir,
+        audit_result.simulation,
+        audit_result.policy_audit
+    )
+    
+    # 写入元数据
+    meta_path = os.path.join(output_dir, "meta.json")
+    write_meta(audit_result.meta, output_dir)
+    
+    result = {
+        "report": report_path,
+        "meta": meta_path,
+        "exports": {}
+    }
+    
+    # PDF导出
+    if export_pdf:
+        pdf_path = os.path.join(output_dir, "report.pdf")
+        pdf_result = export_report(report_path, pdf_path, "pdf")
+        result["exports"]["pdf"] = pdf_result
+    
+    # SARIF导出
+    if export_sarif:
+        sarif_path = os.path.join(output_dir, "leakage.sarif")
+        sarif_result = export_report(None, sarif_path, "sarif", audit_result.data)
+        result["exports"]["sarif"] = sarif_result
+    
+    return result
 
 # 便捷函数
-def quick_audit(df: pd.DataFrame, target: str, time_col: Optional[str] = None) -> AuditResult:
-    """快速审计（仅基础检测）"""
-    return audit(df, target, time_col)
+def quick_audit(df: pd.DataFrame, target: str, **kwargs) -> AuditResult:
+    """快速审计"""
+    return audit(df, target, **kwargs)
 
-def quick_fix(df: pd.DataFrame, target: str, time_col: Optional[str] = None) -> Tuple[pd.DataFrame, AuditResult]:
-    """快速修复（最小修复）"""
-    audit_result = quick_audit(df, target, time_col)
-    df_fixed, _ = apply_minimal_fixes(df, audit_result.risks, target, time_col)
-    return df_fixed, audit_result
+def quick_fix(df: pd.DataFrame, target: str, **kwargs) -> tuple[pd.DataFrame, FixPlan]:
+    """快速修复"""
+    audit_result = audit(df, target, **kwargs)
+    fix_plan = plan_fixes(audit_result)
+    fixed_df = apply_fixes_to_dataframe(df, fix_plan)
+    return fixed_df, fix_plan
 

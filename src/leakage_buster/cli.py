@@ -7,9 +7,13 @@ from .core.report import render_report, write_fix_script, write_meta
 from .core.simulator import run_time_series_simulation
 from .core.cv_policy import audit_cv_policy
 from .core.export import export_report
-from .core.fix_plan import create_fix_plan, save_fix_plan
-from .core.fix_apply import apply_minimal_fixes
-from .api import audit, AuditResult
+from .api import audit, plan_fixes, apply_fixes_to_dataframe, export_audit_result
+
+# 退出码定义
+EXIT_OK = 0
+EXIT_WARNINGS = 2
+EXIT_HIGH_LEAKAGE = 3
+EXIT_INVALID_CONFIG = 4
 
 def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_type: str | None = None, 
         simulate_cv: str | None = None, leak_threshold: float = 0.02, cv_policy_file: str | None = None,
@@ -21,7 +25,7 @@ def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_typ
         if not os.path.exists(train_path):
             return {
                 "status": "error",
-                "exit_code": 4,  # invalid-config
+                "exit_code": EXIT_INVALID_CONFIG,
                 "error": {
                     "type": "FileNotFoundError",
                     "message": f"Training file not found: {train_path}",
@@ -35,7 +39,7 @@ def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_typ
         except Exception as e:
             return {
                 "status": "error",
-                "exit_code": 4,  # invalid-config
+                "exit_code": EXIT_INVALID_CONFIG,
                 "error": {
                     "type": "FileNotFoundError",
                     "message": f"Failed to read CSV file: {str(e)}",
@@ -47,7 +51,7 @@ def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_typ
         if target not in df.columns:
             return {
                 "status": "error",
-                "exit_code": 4,  # invalid-config
+                "exit_code": EXIT_INVALID_CONFIG,
                 "error": {
                     "type": "ValidationError",
                     "message": f"Target column '{target}' not found in data",
@@ -59,7 +63,7 @@ def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_typ
         if time_col and time_col not in df.columns:
             return {
                 "status": "error",
-                "exit_code": 4,  # invalid-config
+                "exit_code": EXIT_INVALID_CONFIG,
                 "error": {
                     "type": "ValidationError",
                     "message": f"Time column '{time_col}' not found in data",
@@ -67,21 +71,17 @@ def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_typ
                 }
             }
         
-        # 运行审计
+        # 使用API进行审计
         try:
             audit_result = audit(
-                df=df,
-                target=target,
-                time_col=time_col,
-                cv_type=cv_type,
-                simulate_cv=(simulate_cv == "time"),
-                leak_threshold=leak_threshold,
+                df, target=target, time_col=time_col, cv_type=cv_type,
+                simulate_cv=simulate_cv, leak_threshold=leak_threshold,
                 cv_policy_file=cv_policy_file
             )
         except Exception as e:
             return {
                 "status": "error",
-                "exit_code": 4,  # invalid-config
+                "exit_code": EXIT_INVALID_CONFIG,
                 "error": {
                     "type": "RuntimeError",
                     "message": f"Audit failed: {str(e)}",
@@ -89,43 +89,46 @@ def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_typ
                 }
             }
         
+        # 确定退出码
+        exit_code = EXIT_OK
+        if audit_result.has_high_risk:
+            exit_code = EXIT_HIGH_LEAKAGE
+        elif audit_result.has_medium_risk:
+            exit_code = EXIT_WARNINGS
+        
         # 处理auto-fix
-        fix_result = None
-        if auto_fix == "plan" and fix_json:
+        fix_plan = None
+        if auto_fix == "plan":
             try:
-                fix_plan = create_fix_plan(audit_result.risks)
-                save_fix_plan(fix_plan, fix_json)
-                fix_result = {
-                    "plan_file": fix_json,
-                    "plan_id": fix_plan.plan_id,
-                    "actions_count": len(fix_plan.actions),
-                    "summary": fix_plan.summary
-                }
+                fix_plan = plan_fixes(audit_result, train_path)
+                # 写入修复计划JSON
+                if fix_json:
+                    os.makedirs(os.path.dirname(fix_json), exist_ok=True)
+                    with open(fix_json, 'w', encoding='utf-8') as f:
+                        json.dump(fix_plan.model_dump(), f, ensure_ascii=False, indent=2)
             except Exception as e:
                 return {
                     "status": "error",
-                    "exit_code": 4,  # invalid-config
+                    "exit_code": EXIT_INVALID_CONFIG,
                     "error": {
                         "type": "RuntimeError",
-                        "message": f"Fix plan generation failed: {str(e)}",
+                        "message": f"Fix planning failed: {str(e)}",
                         "details": {"error": str(e)}
                     }
                 }
         
-        elif auto_fix == "apply" and fixed_train:
+        elif auto_fix == "apply":
             try:
-                df_fixed, fix_result = apply_minimal_fixes(df, audit_result.risks, target, time_col)
-                os.makedirs(os.path.dirname(fixed_train), exist_ok=True)
-                df_fixed.to_csv(fixed_train, index=False)
-                fix_result = {
-                    "fixed_file": fixed_train,
-                    "removed_columns": fix_result.removed_columns,
-                    "warnings": fix_result.warnings
-                }
+                fix_plan = plan_fixes(audit_result, train_path)
+                fixed_df = apply_fixes_to_dataframe(df, fix_plan)
+                # 写入修复后的数据
+                if fixed_train:
+                    os.makedirs(os.path.dirname(fixed_train), exist_ok=True)
+                    fixed_df.to_csv(fixed_train, index=False)
             except Exception as e:
                 return {
                     "status": "error",
-                    "exit_code": 4,  # invalid-config
+                    "exit_code": EXIT_INVALID_CONFIG,
                     "error": {
                         "type": "RuntimeError",
                         "message": f"Fix application failed: {str(e)}",
@@ -171,7 +174,7 @@ def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_typ
         except Exception as e:
             return {
                 "status": "error",
-                "exit_code": 4,  # invalid-config
+                "exit_code": EXIT_INVALID_CONFIG,
                 "error": {
                     "type": "FileNotFoundError",
                     "message": f"Failed to create output directory: {str(e)}",
@@ -182,18 +185,12 @@ def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_typ
         # 生成输出文件
         try:
             write_meta(meta, out_dir)
-            report_path = render_report(
-                {"risks": audit_result.risks}, 
-                meta, 
-                out_dir, 
-                audit_result.simulation, 
-                audit_result.policy_audit
-            )
-            fix_path = write_fix_script({"risks": audit_result.risks}, out_dir)
+            report_path = render_report(audit_result.data, meta, out_dir, audit_result.simulation, audit_result.policy_audit)
+            fix_path = write_fix_script(audit_result.data, out_dir)
         except Exception as e:
             return {
                 "status": "error",
-                "exit_code": 4,  # invalid-config
+                "exit_code": EXIT_INVALID_CONFIG,
                 "error": {
                     "type": "RuntimeError",
                     "message": f"Failed to generate output files: {str(e)}",
@@ -217,13 +214,10 @@ def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_typ
         if export_sarif:
             try:
                 sarif_path = export_sarif
-                export_result = export_report(None, sarif_path, "sarif", {"risks": audit_result.risks})
+                export_result = export_report(None, sarif_path, "sarif", audit_result.data)
                 export_results["sarif"] = export_result
             except Exception as e:
                 export_results["sarif"] = {"status": "error", "message": f"SARIF export failed: {str(e)}"}
-        
-        # 确定退出码
-        exit_code = audit_result.get_exit_code()
         
         # 返回成功结果
         result_data = {
@@ -231,7 +225,14 @@ def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_typ
             "fix_script": fix_path,
             "meta": meta,
             "risks": audit_result.risks,
-            "exit_code": exit_code
+            "summary": {
+                "total_risks": audit_result.risk_count,
+                "high_risks": audit_result.high_risk_count,
+                "medium_risks": audit_result.medium_risk_count,
+                "low_risks": audit_result.low_risk_count,
+                "has_high_risk": audit_result.has_high_risk,
+                "has_medium_risk": audit_result.has_medium_risk
+            }
         }
         
         # 添加模拟结果
@@ -246,9 +247,9 @@ def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_typ
         if export_results:
             result_data["exports"] = export_results
         
-        # 添加修复结果
-        if fix_result:
-            result_data["fix_result"] = fix_result
+        # 添加修复计划
+        if fix_plan:
+            result_data["fix_plan"] = fix_plan.model_dump()
         
         return {
             "status": "success",
@@ -260,7 +261,7 @@ def run(train_path: str, target: str, time_col: str | None, out_dir: str, cv_typ
         # 捕获未预期的错误
         return {
             "status": "error",
-            "exit_code": 4,  # invalid-config
+            "exit_code": EXIT_INVALID_CONFIG,
             "error": {
                 "type": "RuntimeError",
                 "message": f"Unexpected error: {str(e)}",
@@ -288,11 +289,11 @@ def build_parser():
     run_p.add_argument("--export-sarif", type=str, default=None,
                        help="Export SARIF file path for GitHub Code Scanning")
     run_p.add_argument("--auto-fix", type=str, choices=["plan", "apply"], default=None,
-                       help="Auto-fix mode: plan (generate fix plan) or apply (apply minimal fixes)")
+                       help="Auto-fix mode: plan (generate fix plan) or apply (apply fixes)")
     run_p.add_argument("--fix-json", type=str, default=None,
-                       help="Fix plan JSON output path (for --auto-fix plan)")
+                       help="Fix plan JSON output path (used with --auto-fix plan)")
     run_p.add_argument("--fixed-train", type=str, default=None,
-                       help="Fixed training data CSV output path (for --auto-fix apply)")
+                       help="Fixed training data CSV output path (used with --auto-fix apply)")
     run_p.add_argument("--out", type=str, required=True, help="Output directory")
     return p
 
