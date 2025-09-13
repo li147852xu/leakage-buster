@@ -81,7 +81,7 @@ leakage-buster run \
 
 | Detection Type | Description | 中文说明 |
 |----------------|-------------|----------|
-| **Target Leakage** | High correlation features (|corr|/R²≥0.98) | 高相关性特征检测 |
+| **Target Leakage** | High correlation features (abs(corr)/R²≥0.98) | 高相关性特征检测 |
 | **Statistical Leakage** | TE/WOE/Rolling statistics issues | 统计类泄漏检测 |
 | **Time Leakage** | Time column parsing and validation | 时间列解析与验证 |
 | **Group Leakage** | High duplicate columns → GroupKFold | 分组泄漏检测 |
