@@ -62,7 +62,7 @@ class ReportExporter:
                 "message": "WeasyPrint not available, falling back to HTML",
                 "output_file": html_file,
                 "method": "html",
-                "install_hint": "pip install weasyprint"
+                "install_hint": "pip install 'leakage-buster[pdf]'"
             }
     
     def export_sarif(self, results: Dict, output_file: str) -> Dict:

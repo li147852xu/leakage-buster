@@ -4,7 +4,9 @@ from typing import Dict, Optional
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 def render_report(results: Dict, meta: Dict, out_dir: str, simulation_results: Optional[Dict] = None, policy_audit: Optional[Dict] = None):
-    env = Environment(loader=FileSystemLoader(searchpath=os.path.join(os.path.dirname(__file__), "..", "templates")),
+    # Use relative path to find template directory
+    template_path = os.path.join(os.path.dirname(__file__), "..", "templates")
+    env = Environment(loader=FileSystemLoader(searchpath=template_path),
                       autoescape=select_autoescape())
     tpl = env.get_template("report.html.j2")
     html = tpl.render(
