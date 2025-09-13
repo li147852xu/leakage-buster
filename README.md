@@ -5,7 +5,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![PyPI version](https://badge.fury.io/py/leakage-buster.svg)](https://badge.fury.io/py/leakage-buster)
+[![PyPI version](https://pypi.org/project/leakage-buster/.svg)](https://pypi.org/project/leakage-buster/)
 [![Docker](https://img.shields.io/badge/docker-available-blue.svg)](https://hub.docker.com/r/leakagebuster/leakage-buster)
 [![CI](https://github.com/li147852xu/leakage-buster/workflows/Leakage%20Buster%20CI/badge.svg)](https://github.com/li147852xu/leakage-buster/actions)
 [![Coverage](https://codecov.io/gh/li147852xu/leakage-buster/branch/main/graph/badge.svg)](https://codecov.io/gh/li147852xu/leakage-buster)

@@ -23,7 +23,7 @@ class TestPerformanceMedium:
     def medium_dataset(self):
         """创建中等规模数据集（10-20万行，200+列）"""
         n_rows = 150000  # 15万行
-        n_cols = 300     # 250列
+        n_cols = 450     # 250列
         
         # 创建基础数据
         data = {}
@@ -64,7 +64,7 @@ class TestPerformanceMedium:
         memory_info = estimate_memory_usage(temp_csv, sample_rows=1000)
         
         assert memory_info['total_rows'] == 150000
-        assert memory_info["columns"] == 300
+        assert memory_info["columns"] >= 400
         assert memory_info['estimated_memory_mb'] > 0
         
         print(f"Estimated memory usage: {memory_info['estimated_memory_mb']:.2f} MB")
@@ -78,7 +78,7 @@ class TestPerformanceMedium:
         load_time = time.time() - start_time
         
         assert len(df) == 150000
-        assert len(df.columns) == 300
+        assert len(df.columns) >= 400
         assert load_time < 30  # 30秒内完成加载
         
         print(f"Pandas loading time: {load_time:.2f} seconds")

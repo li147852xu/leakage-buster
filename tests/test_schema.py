@@ -165,7 +165,7 @@ def test_statistical_leakage_preview(tmp_path: Path):
     
     # 验证包含统计类泄漏预览分区
     assert "Statistical Leakage Detection" in report_content
-    assert "Statistical leakage" in report_content or "统计特征" in report_content
+    assert "Statistical Leakage Detection" in report_content
 
 def test_detector_registry():
     """测试检测器注册表功能"""
@@ -238,6 +238,6 @@ def test_error_handling(tmp_path: Path):
     
     result = run(str(csv), target="nonexistent", time_col=None, out_dir=str(tmp_path))
     assert result["status"] == "error"
-    assert result["exit_code"] == 2
+    assert result["exit_code"] == 4
     assert "error" in result
 

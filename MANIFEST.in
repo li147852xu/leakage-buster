@@ -1,0 +1,18 @@
+
+include README.md
+include CHANGELOG.md
+include LICENSE
+include pyproject.toml
+include Dockerfile
+recursive-include src/leakage_buster/templates *.j2
+recursive-include examples *.csv
+recursive-include conf *.yaml
+recursive-include .github/workflows *.yml
+recursive-include docs *.md
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .git*
+global-exclude debug_*
+global-exclude test_*
+global-exclude temp_*
+global-exclude runs/*
