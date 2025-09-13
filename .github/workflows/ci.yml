@@ -1,0 +1,294 @@
+
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.9, 3.10, 3.11, 3.12]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-cov
+    
+    - name: Run tests
+      run: |
+        pytest tests/ -v --cov=src/leakage_buster --cov-report=xml
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  leakage-check:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.11
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+    
+    - name: Run leakage detection on examples
+      run: |
+        # 基本检测
+        leakage-buster run --train examples/synth_train.csv --target y --time-col date --out runs/ci_basic
+        
+        # 检查退出码
+        echo "Basic check exit code: $?"
+        
+        # 带时序模拟的检测
+        leakage-buster run --train examples/homecredit_te.csv --target y --time-col date --out runs/ci_te --simulate-cv time --leak-threshold 0.02
+        
+        # 检查退出码
+        echo "TE check exit code: $?"
+        
+        # 带策略审计的检测
+        leakage-buster run --train examples/group_cv.csv --target y --time-col date --out runs/ci_audit --cv-policy-file conf/cv_policy.yaml
+        
+        # 检查退出码
+        echo "Policy audit exit code: $?"
+    
+    - name: Test auto-fix plan
+      run: |
+        leakage-buster run --train examples/homecredit_te.csv --target y --time-col date --out runs/ci_plan --auto-fix plan --fix-json runs/ci_plan/fix_plan.json
+        
+        # 检查退出码
+        echo "Auto-fix plan exit code: $?"
+        
+        # 验证修复计划文件
+        if [ -f "runs/ci_plan/fix_plan.json" ]; then
+          echo "Fix plan generated successfully"
+          cat runs/ci_plan/fix_plan.json | jq '.summary'
+        else
+          echo "Fix plan generation failed"
+          exit 1
+        fi
+    
+    - name: Test auto-fix apply
+      run: |
+        leakage-buster run --train examples/homecredit_te.csv --target y --time-col date --out runs/ci_apply --auto-fix apply --fixed-train runs/ci_apply/fixed_train.csv
+        
+        # 检查退出码
+        echo "Auto-fix apply exit code: $?"
+        
+        # 验证修复后的文件
+        if [ -f "runs/ci_apply/fixed_train.csv" ]; then
+          echo "Fixed training data generated successfully"
+          wc -l runs/ci_apply/fixed_train.csv
+        else
+          echo "Fixed training data generation failed"
+          exit 1
+        fi
+    
+    - name: Test SARIF export
+      run: |
+        leakage-buster run --train examples/fraud_rolling.csv --target y --time-col ts --out runs/ci_sarif --export-sarif runs/ci_sarif/leakage.sarif
+        
+        # 检查退出码
+        echo "SARIF export exit code: $?"
+        
+        # 验证SARIF文件
+        if [ -f "runs/ci_sarif/leakage.sarif" ]; then
+          echo "SARIF file generated successfully"
+          cat runs/ci_sarif/leakage.sarif | jq '.runs[0].results | length'
+        else
+          echo "SARIF file generation failed"
+          exit 1
+        fi
+
+  high-leakage-gate:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.11
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+    
+    - name: Create high-leakage test data
+      run: |
+        python -c "
+        import pandas as pd
+        import numpy as np
+        
+        # 创建高泄漏数据
+        df = pd.DataFrame({
+            'date': pd.date_range('2023-01-01', periods=100, freq='D'),
+            'leaky_col': np.random.normal(0, 1, 100),  # 高相关列
+            'normal_col': np.random.normal(0, 1, 100),
+            'y': np.random.binomial(1, 0.3, 100)
+        })
+        
+        # 让leaky_col与y高度相关
+        df['leaky_col'] = df['y'] * 10 + np.random.normal(0, 0.1, 100)
+        
+        df.to_csv('high_leakage_test.csv', index=False)
+        print('High leakage test data created')
+        "
+    
+    - name: Run leakage detection with high-leakage data
+      run: |
+        leakage-buster run --train high_leakage_test.csv --target y --time-col date --out runs/ci_high_leakage
+        
+        # 检查退出码，应该是3（high-leakage-found）
+        exit_code=$?
+        echo "High leakage check exit code: $exit_code"
+        
+        if [ $exit_code -eq 3 ]; then
+          echo "✅ High leakage correctly detected (exit code 3)"
+        else
+          echo "❌ High leakage not detected (exit code $exit_code)"
+          exit 1
+        fi
+    
+    - name: Test CI gating
+      run: |
+        # 模拟CI阻断逻辑
+        leakage-buster run --train high_leakage_test.csv --target y --time-col date --out runs/ci_gate
+        
+        exit_code=$?
+        echo "CI gate exit code: $exit_code"
+        
+        case $exit_code in
+          0)
+            echo "✅ No leakage detected - CI passes"
+            ;;
+          2)
+            echo "⚠️ Warnings detected - CI passes with warnings"
+            ;;
+          3)
+            echo "🚨 High leakage detected - CI blocked"
+            exit 1  # 阻断CI
+            ;;
+          4)
+            echo "❌ Configuration error - CI blocked"
+            exit 1  # 阻断CI
+            ;;
+          *)
+            echo "❌ Unknown error - CI blocked"
+            exit 1  # 阻断CI
+            ;;
+        esac
+
+  python-sdk-test:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.11
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+    
+    - name: Test Python SDK import
+      run: |
+        python -c "
+        from leakage_buster.api import audit, plan_fixes, apply_fixes, quick_fix
+        print('✅ Python SDK imports successful')
+        "
+    
+    - name: Test Python SDK functionality
+      run: |
+        python -c "
+        import pandas as pd
+        import numpy as np
+        from leakage_buster.api import audit, plan_fixes, apply_fixes, quick_fix
+        
+        # 创建测试数据
+        df = pd.DataFrame({
+            'date': pd.date_range('2023-01-01', periods=50, freq='D'),
+            'amount': np.random.normal(100, 20, 50),
+            'y': np.random.binomial(1, 0.3, 50)
+        })
+        
+        # 测试审计
+        result = audit(df, 'y', 'date')
+        print(f'✅ Audit completed: {len(result.risks)} risks found')
+        
+        # 测试修复计划
+        plan = plan_fixes(result)
+        print(f'✅ Fix plan created: {len(plan.actions)} actions')
+        
+        # 测试快速修复
+        df_fixed, audit_result = quick_fix(df, 'y', 'date')
+        print(f'✅ Quick fix completed: {df_fixed.shape[1]} columns remaining')
+        
+        print('✅ All Python SDK tests passed')
+        "
+
+  documentation:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.11
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install sphinx sphinx-rtd-theme
+    
+    - name: Generate documentation
+      run: |
+        # 这里可以添加文档生成逻辑
+        echo "Documentation generation placeholder"
+    
+    - name: Check README
+      run: |
+        if [ -f "README.md" ]; then
+          echo "✅ README.md exists"
+          wc -l README.md
+        else
+          echo "❌ README.md missing"
+          exit 1
+        fi
+
