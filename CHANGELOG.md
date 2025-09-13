@@ -6,6 +6,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2024-12-19
+
+### Fixed
+- 修复CI测试失败问题
+- 清理GitHub上的debug文件
+- 修复Python版本矩阵（3.10不是3.1）
+- 修复README徽章链接
+
+### Added
+- 添加PyPI发布支持（setup.py, MANIFEST.in, LICENSE）
+- 添加Codecov覆盖率支持
+- 添加.coveragerc配置文件
+- 创建发布工作流（TestPyPI和PyPI）
+
+### Changed
+- 更新README徽章为动态版本显示
+- 统一版本号到1.0.1
+- 改进CI工作流配置
+
 ## [1.0.0] - 2024-09-13
 
 ### Added

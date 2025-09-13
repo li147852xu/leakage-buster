@@ -1,63 +1,37 @@
+# Leakage Buster
 
-# Leakage Buster v1.0.0
+[![PyPI version](https://img.shields.io/pypi/v/leakage-buster.svg)](https://pypi.org/project/leakage-buster/)
+[![Python](https://img.shields.io/pypi/pyversions/leakage-buster.svg)](https://pypi.org/project/leakage-buster/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/li147852xu/leakage-buster/actions/workflows/ci.yml/badge.svg)](https://github.com/li147852xu/leakage-buster/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/li147852xu/leakage-buster/branch/main/graph/badge.svg)](https://codecov.io/gh/li147852xu/leakage-buster)
 
-> 🕵️‍♂️ 专业的数据泄漏检测与口径一致性审计工具
+> 专业的**时间泄漏 / KFold 泄漏 / 口径一致性审计**工具，提供报告与修复建议，支持 CLI 与 Python SDK。
 
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![PyPI version](https://pypi.org/project/leakage-buster/.svg)](https://pypi.org/project/leakage-buster/)
-[![Docker](https://img.shields.io/badge/docker-available-blue.svg)](https://hub.docker.com/r/leakagebuster/leakage-buster)
-[![CI](https://github.com/li147852xu/leakage-buster/workflows/Leakage%20Buster%20CI/badge.svg)](https://github.com/li147852xu/leakage-buster/actions)
-[![Coverage](https://codecov.io/gh/li147852xu/leakage-buster/branch/main/graph/badge.svg)](https://codecov.io/gh/li147852xu/leakage-buster)
+## 这是什么 & 解决什么问题
+- **为什么需要**：在表格建模中，目标编码、滚动统计或错误的折法会"看未来"，使 OOF 虚高，线上掉崖。
+- **它做了什么**：
+  - 检测：高相关/分类纯度、TE/WOE/滚动统计泄漏、KFold/Group 泄漏、时间列问题、口径一致性。
+  - 评估：时序模拟（TimeSeriesSplit vs KFold）对比，量化泄漏影响。
+  - 修复：输出修复脚本/计划（删列/折内重算/推荐分组），可一键 `apply`。
+  - 交付：HTML/PDF 报告、SARIF 告警、Docker & PyPI、一键复现 `meta.json`。
+- **适用场景**：金融风控/欺诈、时序二分类/回归、比赛/生产前审计。
 
-## 🚀 三分钟上手
-
-### 安装
+## 三分钟上手
 ```bash
-# 从PyPI安装
 pip install leakage-buster
 
-# 或从源码安装
-git clone https://github.com/li147852xu/leakage-buster.git
-cd leakage-buster
-pip install -e .
+leakage-buster run \
+  --train examples/synth_train.csv \
+  --target y --time-col date \
+  --out runs/demo
 ```
 
-### 基本使用
-```bash
-# 快速检测
-leakage-buster run --train data.csv --target y --out runs/audit
-
-# 高性能检测（推荐）
-leakage-buster run --train data.csv --target y --time-col date --out runs/audit \
-  --engine pandas --n-jobs 8 --memory-cap 4096
-
-# 生成修复计划
-leakage-buster run --train data.csv --target y --out runs/audit \
-  --auto-fix plan --fix-json runs/audit/fix_plan.json
-
-# 自动修复数据
-leakage-buster run --train data.csv --target y --out runs/audit \
-  --auto-fix apply --fixed-train runs/audit/fixed_data.csv
-```
-
-### Python SDK
-```python
-from leakage_buster.api import audit, plan_fixes, apply_fixes_to_dataframe
-import pandas as pd
-
-# 加载数据
-df = pd.read_csv('data.csv')
-
-# 审计数据
-audit_result = audit(df, target='y', time_col='date')
-
-# 生成修复计划
-fix_plan = plan_fixes(audit_result, 'data.csv')
-
-# 应用修复
-fixed_df = apply_fixes_to_dataframe(df, fix_plan)
-```
+**CLI 关键参数**
+- `--simulate-cv time`：启用时序模拟；`--leak-threshold` 控制标红阈值
+- `--cv-policy-file`：校验离线/在线口径一致性
+- `--auto-fix plan|apply`：生成/应用修复计划
+- `--export pdf|sarif`：导出 PDF/SARIF
 
 ## ✨ 核心特性
 
@@ -238,7 +212,14 @@ pytest -q -k "not slow"
 
 ## 📈 版本历史
 
-### v1.0.0 (当前)
+### v1.0.1 (当前)
+- 🔧 修复CI测试失败问题
+- 🔧 清理GitHub上的debug文件
+- ✨ 添加PyPI发布支持
+- ✨ 添加Codecov覆盖率支持
+- 🔧 修复README徽章链接
+
+### v1.0.0
 - ✨ 性能与容错：pandas/polars引擎、并行处理、内存控制
 - ✨ 专业报告：风险雷达图、交互式界面、多格式导出
 - ✨ Docker支持：轻量镜像、健康检查、完整元数据
@@ -294,9 +275,8 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 ---
 
-**Leakage Buster v1.0.0** - 让数据泄漏无处遁形！🕵️‍♂️
+**Leakage Buster** - 让数据泄漏无处遁形！🕵️‍♂️
 
 [![Star](https://img.shields.io/github/stars/li147852xu/leakage-buster?style=social)](https://github.com/li147852xu/leakage-buster)
 [![Fork](https://img.shields.io/github/forks/li147852xu/leakage-buster?style=social)](https://github.com/li147852xu/leakage-buster)
 [![Watch](https://img.shields.io/github/watchers/li147852xu/leakage-buster?style=social)](https://github.com/li147852xu/leakage-buster)
-
