@@ -55,11 +55,17 @@ runs/
 .coverage
 htmlcov/
 
-# Debug files
+# Debug and test files
 debug_*.py
-test_*.py
+debug_*.csv
+debug_*.json
 *_debug.py
-*_test.py
+*_debug.csv
+*_debug.json
+test_*.csv
+test_*.json
+temp_*.csv
+temp_*.json
 
 # Temporary files
 *.tmp
@@ -83,3 +89,13 @@ dmypy.json
 *.sarif
 fix_plan.json
 fixed_train.csv
+
+# Performance test data
+perf_data/
+large_*.csv
+
+# Docker
+.dockerignore
+
+# CI/CD
+.github/workflows/ci.yml.bak
