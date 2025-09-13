@@ -1,6 +1,6 @@
 
 <!doctype html><html lang="zh"><meta charset="utf-8"/>
-<title>Leakage Buster 报告 v0.4</title>
+<title>Leakage Buster 报告 v1.0</title>
 <style>
   body{font-family:system-ui,Segoe UI,Arial,PingFang SC; margin:24px; line-height:1.6}
   .container{max-width:1200px; margin:0 auto}
@@ -29,6 +29,12 @@
   .matrix-card.low{border-left-color:#28a745; background:#d4edda}
   .matrix-card .count{font-size:2rem; font-weight:bold; margin:0}
   .matrix-card .label{font-size:0.9rem; color:#6c757d; margin:0.5rem 0 0 0}
+  
+  /* 雷达图样式 */
+  .radar-chart{background:#fff; border:1px solid #dee2e6; border-radius:8px; padding:1.5rem; margin:1.5rem 0; box-shadow:0 2px 4px rgba(0,0,0,0.1)}
+  .radar-chart h3{margin-top:0; color:#495057; border-bottom:2px solid #dee2e6; padding-bottom:0.5rem}
+  .radar-container{display:flex; justify-content:center; align-items:center; min-height:400px}
+  .radar-svg{max-width:100%; height:auto}
   
   /* 策略审计样式 */
   .policy-audit{background:#e3f2fd; border:2px solid #2196f3; border-radius:8px; padding:1.5rem; margin:1.5rem 0}
@@ -69,6 +75,13 @@
   .section{margin:2rem 0}
   .section h2{color:#495057; border-bottom:2px solid #dee2e6; padding-bottom:0.5rem; margin-bottom:1rem}
   
+  /* 页脚样式 */
+  .footer{background:#f8f9fa; border-top:1px solid #dee2e6; padding:2rem; margin-top:3rem; text-align:center; color:#6c757d}
+  .footer .meta{display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:1rem; margin:1rem 0}
+  .footer .meta-item{background:white; padding:1rem; border-radius:6px; border:1px solid #dee2e6}
+  .footer .meta-item .label{font-size:0.9rem; color:#6c757d; margin-bottom:0.5rem}
+  .footer .meta-item .value{font-family:Monaco,Consolas,monospace; font-size:0.8rem; color:#495057}
+  
   /* 响应式设计 */
   @media (max-width: 768px) {
     .container{margin:0; padding:0 1rem}
@@ -76,6 +89,7 @@
     .header h1{font-size:2rem}
     .matrix-grid{grid-template-columns:1fr}
     .policy-summary{grid-template-columns:1fr}
+    .radar-container{min-height:300px}
   }
   
   /* 打印样式 */
@@ -89,25 +103,29 @@
 <div class="container">
   <!-- 头部 -->
   <div class="header">
-    <h1>🕵️‍♂️ Leakage Buster 报告 v0.4</h1>
+    <h1>🕵️‍♂️ Leakage Buster 报告 v1.0</h1>
     <p>数据泄漏检测与口径一致性审计报告</p>
     <div style="margin-top:1rem; font-size:0.9rem; opacity:0.8">
       <div>目标列：<code>{{ meta["target"] }}</code> | 时间列：<code>{{ meta["time_col"] or "未指定" }}</code> | CV策略：<code>{{ meta["cv_type"] or "未指定" }}</code></div>
-      <div>样本数：{{ meta["n_rows"] }} | 特征数：{{ meta["n_cols"] }} | 生成时间：{{ now }}</div>
+      <div>样本数：{{ meta["n_rows"] }} | 特征数：<code>{{ meta["n_cols"] }}</code> | 生成时间：{{ now }}</div>
       {% if meta.get("simulate_cv") %}
       <div>时序模拟：<code>{{ meta["simulate_cv"] }}</code> | 泄漏阈值：<code>{{ meta["leak_threshold"] }}</code></div>
       {% endif %}
       {% if meta.get("cv_policy_file") %}
       <div>策略文件：<code>{{ meta["cv_policy_file"] }}</code></div>
       {% endif %}
+      {% if meta.get("engine") %}
+      <div>引擎：<code>{{ meta["engine"] }}</code> | 并行数：<code>{{ meta.get("n_jobs", "auto") }}</code> | 内存限制：<code>{{ meta.get("memory_cap", "auto") }}MB</code></div>
+      {% endif %}
     </div>
   </div>
 
   <!-- 目录 -->
   <div class="toc">
-    <h2>📋 报告目录</h2>
+    <h2>�� 报告目录</h2>
     <ul>
       <li class="toc-level-1"><a href="#risk-matrix">风险矩阵概览</a></li>
+      <li class="toc-level-1"><a href="#radar-chart">风险雷达图</a></li>
       {% if policy_audit %}
       <li class="toc-level-1"><a href="#policy-audit">口径一致性审计</a></li>
       {% endif %}
@@ -171,6 +189,16 @@
     {% endif %}
   </div>
 
+  <!-- 风险雷达图 -->
+  <div class="radar-chart" id="radar-chart">
+    <h3>🎯 风险雷达图</h3>
+    <div class="radar-container">
+      <svg class="radar-svg" viewBox="0 0 400 400" id="riskRadarChart">
+        <!-- 雷达图将通过JavaScript动态生成 -->
+      </svg>
+    </div>
+  </div>
+
   <!-- 口径一致性审计 -->
   {% if policy_audit %}
   <div class="policy-audit" id="policy-audit">
@@ -218,7 +246,7 @@
             - 检查聚合统计是否在CV内正确计算
           {% endif %}
           {% if r.get("leak_score", 0) > 0 %}
-          <span class="leak-score">[风险分: {{ "%.2f"|format(r["leak_score"]) }}]</span>
+          <span class="leak_score">[风险分: {{ "%.2f"|format(r["leak_score"]) }}]</span>
           {% endif %}
         </li>
       {% endfor %}
@@ -238,7 +266,7 @@
             - 检查类别特征是否由目标聚合产生
           {% endif %}
           {% if r.get("leak_score", 0) > 0 %}
-          <span class="leak-score">[风险分: {{ "%.2f"|format(r["leak_score"]) }}]</span>
+          <span class="leak_score">[风险分: {{ "%.2f"|format(r["leak_score"]) }}]</span>
           {% endif %}
         </li>
       {% endfor %}
@@ -258,7 +286,7 @@
             - 考虑采用推荐的CV策略
           {% endif %}
           {% if r.get("leak_score", 0) > 0 %}
-          <span class="leak-score">[风险分: {{ "%.2f"|format(r["leak_score"]) }}]</span>
+          <span class="leak_score">[风险分: {{ "%.2f"|format(r["leak_score"]) }}]</span>
           {% endif %}
         </li>
       {% endfor %}
@@ -293,7 +321,7 @@
         <div class="risk sev-{{ 'high' if r['severity']=='high' else 'medium' if r['severity']=='medium' else 'low' }}">
           <h4>{{ r["name"] }} 
             {% if r.get("leak_score", 0) > 0 %}
-            <span class="leak-score">[风险分: {{ "%.2f"|format(r["leak_score"]) }}]</span>
+            <span class="leak_score">[风险分: {{ "%.2f"|format(r["leak_score"]) }}]</span>
             {% endif %}
           </h4>
           <p>{{ r["detail"] }}</p>
@@ -399,7 +427,7 @@
         <div class="risk sev-{{ 'high' if r['severity']=='high' else 'medium' if r['severity']=='medium' else 'low' }}">
           <h3>{{ r["name"] }}（{{ r["severity"] }}）
             {% if r.get("leak_score", 0) > 0 %}
-            <span class="leak-score">[风险分: {{ "%.2f"|format(r["leak_score"]) }}]</span>
+            <span class="leak_score">[风险分: {{ "%.2f"|format(r["leak_score"]) }}]</span>
             {% endif %}
           </h3>
           <p>{{ r["detail"] }}</p>
@@ -412,8 +440,35 @@
   </div>
 
   <!-- 页脚 -->
-  <div style="margin-top:3rem; padding-top:2rem; border-top:1px solid #dee2e6; text-align:center; color:#6c757d">
-    <p><em>报告生成时间：{{ now }} | Leakage Buster v0.4</em></p>
+  <div class="footer">
+    <h3>📊 报告元数据</h3>
+    <div class="meta">
+      <div class="meta-item">
+        <div class="label">生成时间</div>
+        <div class="value">{{ now }}</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">版本</div>
+        <div class="value">Leakage Buster v1.0.0</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">Git Hash</div>
+        <div class="value">{{ meta.get("git_hash", "unknown") }}</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">随机种子</div>
+        <div class="value">{{ meta.get("random_seed", "42") }}</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">引擎</div>
+        <div class="value">{{ meta.get("engine", "pandas") }}</div>
+      </div>
+      <div class="meta-item">
+        <div class="label">并行数</div>
+        <div class="value">{{ meta.get("n_jobs", "auto") }}</div>
+      </div>
+    </div>
+    <p><em>报告生成时间：{{ now }} | Leakage Buster v1.0.0</em></p>
   </div>
 </div>
 
@@ -424,6 +479,119 @@ function toggleEvidence(id) {
     element.style.display = "block";
   } else {
     element.style.display = "none";
+  }
+}
+
+// 生成风险雷达图
+function generateRadarChart() {
+  const svg = document.getElementById('riskRadarChart');
+  const width = 400;
+  const height = 400;
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const radius = 150;
+  
+  // 清空SVG
+  svg.innerHTML = '';
+  
+  // 风险类别数据
+  const riskData = {
+    '目标泄漏': {{ high_risks|length + medium_risks|length }},
+    '统计泄漏': {{ stat_risks|length }},
+    '时间泄漏': {{ results["risks"]|selectattr("name", "equalto", "Time parse errors")|list|length + results["risks"]|selectattr("name", "equalto", "Time-awareness suggestion")|list|length }},
+    '分组泄漏': {{ results["risks"]|selectattr("name", "equalto", "KFold leakage risk (use GroupKFold)")|list|length }},
+    '策略违规': {{ policy_audit.summary.total_violations if policy_audit else 0 }}
+  };
+  
+  const maxValue = Math.max(...Object.values(riskData));
+  const categories = Object.keys(riskData);
+  const numCategories = categories.length;
+  
+  // 绘制网格
+  for (let i = 1; i <= 5; i++) {
+    const r = (radius * i) / 5;
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', centerX);
+    circle.setAttribute('cy', centerY);
+    circle.setAttribute('r', r);
+    circle.setAttribute('fill', 'none');
+    circle.setAttribute('stroke', '#e0e0e0');
+    circle.setAttribute('stroke-width', '1');
+    svg.appendChild(circle);
+  }
+  
+  // 绘制轴线
+  for (let i = 0; i < numCategories; i++) {
+    const angle = (2 * Math.PI * i) / numCategories - Math.PI / 2;
+    const x = centerX + radius * Math.cos(angle);
+    const y = centerY + radius * Math.sin(angle);
+    
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', centerX);
+    line.setAttribute('y1', centerY);
+    line.setAttribute('x2', x);
+    line.setAttribute('y2', y);
+    line.setAttribute('stroke', '#e0e0e0');
+    line.setAttribute('stroke-width', '1');
+    svg.appendChild(line);
+    
+    // 添加标签
+    const labelX = centerX + (radius + 20) * Math.cos(angle);
+    const labelY = centerY + (radius + 20) * Math.sin(angle);
+    
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', labelX);
+    text.setAttribute('y', labelY);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('dominant-baseline', 'middle');
+    text.setAttribute('font-size', '12');
+    text.setAttribute('fill', '#666');
+    text.textContent = categories[i];
+    svg.appendChild(text);
+  }
+  
+  // 绘制数据多边形
+  const points = [];
+  for (let i = 0; i < numCategories; i++) {
+    const angle = (2 * Math.PI * i) / numCategories - Math.PI / 2;
+    const value = riskData[categories[i]];
+    const normalizedValue = maxValue > 0 ? value / maxValue : 0;
+    const x = centerX + radius * normalizedValue * Math.cos(angle);
+    const y = centerY + radius * normalizedValue * Math.sin(angle);
+    points.push(`${x},${y}`);
+  }
+  
+  const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+  polygon.setAttribute('points', points.join(' '));
+  polygon.setAttribute('fill', 'rgba(102, 126, 234, 0.3)');
+  polygon.setAttribute('stroke', '#667eea');
+  polygon.setAttribute('stroke-width', '2');
+  svg.appendChild(polygon);
+  
+  // 添加数据点
+  for (let i = 0; i < numCategories; i++) {
+    const angle = (2 * Math.PI * i) / numCategories - Math.PI / 2;
+    const value = riskData[categories[i]];
+    const normalizedValue = maxValue > 0 ? value / maxValue : 0;
+    const x = centerX + radius * normalizedValue * Math.cos(angle);
+    const y = centerY + radius * normalizedValue * Math.sin(angle);
+    
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', x);
+    circle.setAttribute('cy', y);
+    circle.setAttribute('r', '4');
+    circle.setAttribute('fill', '#667eea');
+    svg.appendChild(circle);
+    
+    // 添加数值标签
+    const valueText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    valueText.setAttribute('x', x);
+    valueText.setAttribute('y', y - 10);
+    valueText.setAttribute('text-anchor', 'middle');
+    valueText.setAttribute('font-size', '10');
+    valueText.setAttribute('fill', '#333');
+    valueText.textContent = value;
+    svg.appendChild(valueText);
   }
 }
 
@@ -439,6 +607,11 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor => {
       });
     }
   });
+});
+
+// 页面加载完成后生成雷达图
+document.addEventListener('DOMContentLoaded', function() {
+  generateRadarChart();
 });
 </script>
 </html>
